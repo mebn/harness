@@ -87,6 +87,7 @@ export function Composer({ session }: { session: Session }) {
         <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
         <textarea
           ref={ref}
+          data-composer
           value={text}
           rows={1}
           placeholder="Ask anything…"

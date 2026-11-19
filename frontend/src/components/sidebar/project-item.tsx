@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, Folder, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -40,11 +40,7 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
         <ChevronRight
           className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", project.expanded && "rotate-90")}
         />
-        {state === "idle" ? (
-          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ActivityIndicator state={state} />
-        )}
+        {state !== "idle" && <ActivityIndicator state={state} />}
         {editing ? (
           <InlineEdit
             value={project.name}
