@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   ChatService,
+  Dialogs,
   ProjectService,
   SystemService,
   type Message,
@@ -107,7 +108,13 @@ export const useApp = create<AppState>((set, get) => ({
   refreshTree: async () => set({ tree: (await ProjectService.Tree()) ?? [] }),
 
   addProject: async () => {
-    const path = await SystemService.PickFolder();
+    // A runtime call, so the native picker opens in the desktop window (not on the server).
+    const path = await Dialogs.OpenFile({
+      Title: "Open folder",
+      CanChooseDirectories: true,
+      CanChooseFiles: false,
+      CanCreateDirectories: true,
+    });
     if (!path) return;
     const project = await ProjectService.AddProject(path);
     await get().refreshTree();

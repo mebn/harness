@@ -1,8 +1,6 @@
 // Package services exposes backend functionality to the frontend as Wails services.
 package services
 
-import "github.com/wailsapp/wails/v3/pkg/application"
-
 // Event names shared with the frontend.
 const (
 	EventChatMessage    = "chat:message"
@@ -15,13 +13,6 @@ const (
 
 // Emitter sends events to the frontend. Abstracted so services stay testable.
 type Emitter func(name string, data any)
-
-// AppEmitter emits through the running Wails application.
-func AppEmitter(name string, data any) {
-	if app := application.Get(); app != nil {
-		app.Event.Emit(name, data)
-	}
-}
 
 // ChatStatus reports whether a session's agent is running.
 type ChatStatus struct {

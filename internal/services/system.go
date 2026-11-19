@@ -3,8 +3,6 @@ package services
 import (
 	"runtime"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
 	"harness/internal/platform"
 )
 
@@ -14,18 +12,22 @@ type SystemInfo struct {
 	HasWSL bool   `json:"hasWsl"`
 }
 
+// SystemService describes the machine the server runs on.
+// Native dialogs (like the folder picker) are runtime calls handled by the desktop window.
 type SystemService struct{}
 
 func (SystemService) Info() SystemInfo {
 	return SystemInfo{OS: runtime.GOOS, HasWSL: platform.HasWSL()}
 }
 
-// PickFolder opens a native folder picker. Returns "" if cancelled.
-func (SystemService) PickFolder() (string, error) {
-	return application.Get().Dialog.OpenFile().
-		CanChooseDirectories(true).
-		CanChooseFiles(false).
-		CanCreateDirectories(true).
-		SetTitle("Open folder").
-		PromptForSingleSelection()
+// Activity reports active agent turns and open terminals. A plain function rather than a
+// method so it isn't exposed to the frontend.
+func Activity(c *ChatService, t *TerminalService) (runs, terminals int) {
+	c.mu.Lock()
+	runs = len(c.runs)
+	c.mu.Unlock()
+	t.mu.Lock()
+	terminals = len(t.terms)
+	t.mu.Unlock()
+	return runs, terminals
 }
