@@ -87,7 +87,7 @@ function TopBar() {
   return (
     // Part of the window's title bar: draggable, and padded around OS/window controls.
     <header
-      className="flex h-11 shrink-0 items-center gap-2 px-2"
+      className="flex h-11 shrink-0 items-center gap-2 border-b px-2"
       style={{
         ...dragStyle,
         paddingLeft: isMac && !sidebarOpen ? 80 : undefined,

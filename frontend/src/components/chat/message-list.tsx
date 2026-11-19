@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import type { Message } from "@/lib/backend";
 import { MessageItem } from "./message-item";
 
@@ -32,22 +33,41 @@ export function MessageList({ messages, running }: Props) {
         {messages.map((m) => (
           <MessageItem key={m.id} message={m} />
         ))}
-        {running && <ThinkingDots />}
+        {running && <TurnTimer since={lastUserMessageAt(messages)} />}
       </div>
     </div>
   );
 }
 
-function ThinkingDots() {
+/** When the current turn started: the latest user message (survives app reloads). */
+function lastUserMessageAt(messages: Message[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") return messages[i].createdAt;
+  }
+  return Date.now();
+}
+
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
+/** Total time the agent has been working on the current turn. */
+function TurnTimer({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   return (
-    <div className="flex gap-1 py-1">
-      {[0, 150, 300].map((d) => (
-        <span
-          key={d}
-          className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60"
-          style={{ animationDelay: `${d}ms` }}
-        />
-      ))}
+    <div className="flex items-center gap-1.5 py-1 text-xs text-muted-foreground tabular-nums">
+      <Loader2 className="size-3 animate-spin" />
+      {formatElapsed(now - since)}
     </div>
   );
 }

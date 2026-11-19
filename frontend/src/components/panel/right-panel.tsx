@@ -42,7 +42,7 @@ function TabContent({ kind, active }: { kind: PanelKind; active: boolean }) {
     case "terminal":
       return <TerminalView active={active} />;
     case "browser":
-      return <BrowserView />;
+      return <BrowserView active={active} />;
   }
 }
 

@@ -11,6 +11,9 @@ import type * as services$0 from "../../../../../harness/internal/services/model
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import type * as store$0 from "../../../../../harness/internal/store/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as usage$0 from "../../../../../harness/internal/usage/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
@@ -20,6 +23,7 @@ declare module "@wailsio/runtime" {
             "session:updated": store$0.Session;
             "term:data": services$0.TermData;
             "term:exit": services$0.TermExit;
+            "usage:updated": usage$0.Snapshot;
         }
     }
 }

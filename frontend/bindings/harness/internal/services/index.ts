@@ -7,13 +7,15 @@ import * as GitService from "./gitservice.js";
 import * as ProjectService from "./projectservice.js";
 import * as SystemService from "./systemservice.js";
 import * as TerminalService from "./terminalservice.js";
+import * as UsageService from "./usageservice.js";
 export {
     ChatService,
     FileService,
     GitService,
     ProjectService,
     SystemService,
-    TerminalService
+    TerminalService,
+    UsageService
 };
 
 export type {

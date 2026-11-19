@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"time"
 
 	"harness/internal/platform"
+	"harness/internal/usage"
 )
 
 // Claude drives the Claude Code CLI in headless stream-json mode.
@@ -70,7 +72,13 @@ func claudeMode(mode string) string {
 }
 
 type claudeLine struct {
-	Type    string `json:"type"`
+	Type          string `json:"type"`
+	RateLimitInfo *struct {
+		UnifiedWindows map[string]struct {
+			Utilization float64 `json:"utilization"`
+			ResetsAt    int64   `json:"resetsAt"`
+		} `json:"unifiedWindows"`
+	} `json:"rate_limit_info"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
 	Event   *struct {
@@ -122,9 +130,34 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 				emit(Event{Kind: EventToolEnd, ToolID: c.ToolUseID, ToolOutput: flattenContent(c.Content), IsError: c.IsError})
 			}
 		}
+	case "rate_limit_event":
+		if s := claudeUsage(l); s != nil {
+			emit(Event{Kind: EventUsage, Usage: s})
+		}
 	case "result":
 		if l.IsError && l.Result != "" {
 			emit(Event{Kind: EventError, Text: l.Result})
 		}
 	}
+}
+
+var claudeWindows = []struct{ id, label string }{{"five_hour", "5h"}, {"seven_day", "Week"}}
+
+// claudeUsage converts a rate_limit_event into a usage snapshot.
+func claudeUsage(l claudeLine) *usage.Snapshot {
+	if l.RateLimitInfo == nil {
+		return nil
+	}
+	s := &usage.Snapshot{Provider: "claude", UpdatedAt: time.Now().UnixMilli()}
+	for _, w := range claudeWindows {
+		if info, ok := l.RateLimitInfo.UnifiedWindows[w.id]; ok {
+			s.Windows = append(s.Windows, usage.Window{
+				ID: w.id, Label: w.label, Used: info.Utilization, ResetsAt: info.ResetsAt * 1000,
+			})
+		}
+	}
+	if len(s.Windows) == 0 {
+		return nil
+	}
+	return s
 }

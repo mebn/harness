@@ -6,6 +6,7 @@ export {
   ProjectService,
   SystemService,
   TerminalService,
+  UsageService,
 } from "@bindings/harness/internal/services";
 
 export type { SystemInfo, FileEntry } from "@bindings/harness/internal/services/models";

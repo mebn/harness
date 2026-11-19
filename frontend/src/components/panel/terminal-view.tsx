@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Events, TerminalService } from "@/lib/backend";
-import { useApp, useActiveProject } from "@/stores/app-store";
 import { useTheme } from "@/stores/theme-store";
+import { PerSession } from "./per-session";
 
 const THEMES = {
   dark: { background: "#1c1c1c", foreground: "#e5e5e5", cursor: "#e5e5e5", selectionBackground: "#ffffff30" },
@@ -28,25 +28,18 @@ function decode(b64: string): Uint8Array {
 }
 
 /**
- * An interactive shell. The shell starts lazily the first time the tab is shown,
- * in the folder (and Windows/WSL environment) of the project active at that moment.
+ * An interactive shell for one session, in its project folder. The backend picks
+ * WSL or a native shell from where that folder lives. Starts on mount (PerSession
+ * mounts it the first time the session is shown) and lives until unmount.
  */
-export function TerminalView({ active }: { active: boolean }) {
-  const project = useActiveProject();
-  const ready = useApp((s) => s.ready);
+function SessionTerminal({ projectId, active }: { projectId: string; active: boolean }) {
   const theme = useTheme((s) => s.theme);
   const container = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  // Latches true the first time the tab is visible; the shell then lives until unmount.
-  const [shouldStart, setShouldStart] = useState(false);
 
   useEffect(() => {
-    if (active && ready) setShouldStart(true);
-  }, [active, ready]);
-
-  useEffect(() => {
-    if (!shouldStart || !container.current) return;
+    if (!container.current) return;
 
     const term = new Terminal({
       fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
@@ -74,7 +67,7 @@ export function TerminalView({ active }: { active: boolean }) {
       Events.On("term:exit", (e) => e.data.id === id && term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n")),
     ];
 
-    TerminalService.Start(project?.id ?? "", term.cols, term.rows)
+    TerminalService.Start(projectId, term.cols, term.rows)
       .then((tid) => {
         if (disposed) return void TerminalService.Close(tid);
         id = tid;
@@ -98,9 +91,8 @@ export function TerminalView({ active }: { active: boolean }) {
       if (id) void TerminalService.Close(id);
       term.dispose();
     };
-    // Start once; later project switches don't move an existing shell.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldStart]);
+    // projectId is fixed for this instance (one terminal per session).
+  }, [projectId]);
 
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = THEMES[theme];
@@ -114,5 +106,16 @@ export function TerminalView({ active }: { active: boolean }) {
     <div className="h-full w-full p-2" style={{ background: THEMES[theme].background }}>
       <div ref={container} className="h-full w-full" />
     </div>
+  );
+}
+
+
+/** Terminal tab: each session gets its own shell; switching sessions switches shells. */
+export function TerminalView({ active }: { active: boolean }) {
+  return (
+    <PerSession
+      active={active}
+      render={(inst, visible) => <SessionTerminal projectId={inst.projectId} active={visible} />}
+    />
   );
 }

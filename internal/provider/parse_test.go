@@ -39,3 +39,14 @@ func TestParseCopilot(t *testing.T) {
 		t.Fatalf("unexpected events: %+v", ev)
 	}
 }
+
+func TestParseClaudeRateLimit(t *testing.T) {
+	ev := collect(parseClaudeLine, `{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.07,"resetsAt":1795092000},"seven_day":{"utilization":0.06,"resetsAt":1795172400}}}}`)
+	if len(ev) != 1 || ev[0].Kind != EventUsage {
+		t.Fatalf("events: %+v", ev)
+	}
+	w := ev[0].Usage.Windows
+	if len(w) != 2 || w[0].Label != "5h" || w[0].Used != 0.07 || w[0].ResetsAt != 1795092000000 || w[1].Label != "Week" {
+		t.Fatalf("windows: %+v", w)
+	}
+}

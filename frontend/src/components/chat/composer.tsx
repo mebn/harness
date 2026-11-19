@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { Session } from "@/lib/backend";
 import { useApp } from "@/stores/app-store";
 import { OptionPicker } from "./option-picker";
+import { UsageIndicator } from "./usage-indicator";
 
 const MAX_HEIGHT = 240;
 
@@ -48,6 +49,9 @@ export function Composer({ session }: { session: Session }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-4">
       {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
+      <div className="mb-1.5 flex justify-end px-1">
+        <UsageIndicator />
+      </div>
       <div className="rounded-xl border bg-card shadow-sm focus-within:border-ring/60">
         <textarea
           ref={ref}

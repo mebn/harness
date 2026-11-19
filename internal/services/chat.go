@@ -21,13 +21,14 @@ type ChatService struct {
 	store     *store.Store
 	providers *provider.Registry
 	emit      Emitter
+	usage     *UsageService
 
 	mu   sync.Mutex
 	runs map[string]context.CancelFunc // sessionID -> cancel
 }
 
-func NewChatService(s *store.Store, r *provider.Registry, emit Emitter) *ChatService {
-	return &ChatService{store: s, providers: r, emit: emit, runs: map[string]context.CancelFunc{}}
+func NewChatService(s *store.Store, r *provider.Registry, u *UsageService, emit Emitter) *ChatService {
+	return &ChatService{store: s, providers: r, usage: u, emit: emit, runs: map[string]context.CancelFunc{}}
 }
 
 func (c *ChatService) Providers() []provider.Info { return c.providers.Infos() }
@@ -150,6 +151,10 @@ loop:
 			if !ok {
 				break loop
 			}
+			if e.Kind == provider.EventUsage {
+				c.usage.record(*e.Usage)
+				continue
+			}
 			gotOutput = gotOutput || e.Kind != provider.EventError
 			t.apply(e)
 		case <-ticker.C:
@@ -163,6 +168,9 @@ loop:
 	c.flush(t, true)
 
 	c.finishSession(sess.ID, req.SessionID, t.outcome(ctx.Err() != nil), gotOutput)
+	if sess.Provider == "copilot" {
+		go c.usage.refreshCopilot()
+	}
 }
 
 // finishSession records the turn outcome (and bumps updated_at for "time ago").

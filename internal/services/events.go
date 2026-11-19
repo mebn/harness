@@ -10,6 +10,7 @@ const (
 	EventSessionUpdated = "session:updated"
 	EventTermData       = "term:data"
 	EventTermExit       = "term:exit"
+	EventUsageUpdated   = "usage:updated"
 )
 
 // Emitter sends events to the frontend. Abstracted so services stay testable.

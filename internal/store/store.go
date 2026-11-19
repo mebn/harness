@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS messages (
 	parts      TEXT NOT NULL,
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kv (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 `
@@ -323,4 +327,29 @@ func snippet(text, q string) (string, bool) {
 		s += "…"
 	}
 	return s, true
+}
+
+// ---- key/value ----
+
+// GetJSON loads a JSON value stored under key into v. Missing keys return ErrNotFound.
+func (s *Store) GetJSON(key string, v any) error {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM kv WHERE key = ?`, key).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(raw), v)
+}
+
+// SetJSON stores v as JSON under key.
+func (s *Store) SetJSON(key string, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, string(raw))
+	return err
 }

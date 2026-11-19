@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"harness/internal/platform"
+	"harness/internal/usage"
 )
 
 // Option is a selectable value (model, effort level, permission mode).
@@ -57,6 +58,7 @@ const (
 	EventToolStart
 	EventToolEnd
 	EventError
+	EventUsage // plan usage limits reported by the provider
 )
 
 // Event is a normalized streaming event from a provider.
@@ -68,6 +70,7 @@ type Event struct {
 	ToolInput  string
 	ToolOutput string
 	IsError    bool
+	Usage      *usage.Snapshot // set for EventUsage
 }
 
 // Provider runs one turn and streams events until the channel closes.

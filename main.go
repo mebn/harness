@@ -10,6 +10,7 @@ import (
 	"harness/internal/provider"
 	"harness/internal/services"
 	"harness/internal/store"
+	"harness/internal/usage"
 )
 
 //go:embed all:frontend/dist
@@ -22,6 +23,7 @@ func init() {
 	application.RegisterEvent[store.Session](services.EventSessionUpdated)
 	application.RegisterEvent[services.TermData](services.EventTermData)
 	application.RegisterEvent[services.TermExit](services.EventTermExit)
+	application.RegisterEvent[usage.Snapshot](services.EventUsageUpdated)
 }
 
 func main() {
@@ -37,6 +39,7 @@ func main() {
 
 	providers := provider.NewRegistry(provider.Claude{}, provider.Copilot{})
 	emit := services.AppEmitter
+	usageSvc := services.NewUsageService(db, emit)
 
 	app := application.New(application.Options{
 		Name:        "Harness",
@@ -44,7 +47,8 @@ func main() {
 		Services: []application.Service{
 			application.NewService(&services.SystemService{}),
 			application.NewService(services.NewProjectService(db, providers)),
-			application.NewService(services.NewChatService(db, providers, emit)),
+			application.NewService(services.NewChatService(db, providers, usageSvc, emit)),
+			application.NewService(usageSvc),
 			application.NewService(services.NewFileService(db)),
 			application.NewService(services.NewGitService(db)),
 			application.NewService(services.NewTerminalService(db, emit)),

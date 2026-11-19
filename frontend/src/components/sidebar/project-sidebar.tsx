@@ -23,9 +23,9 @@ export function ProjectSidebar() {
   return (
     <aside className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Empty strip that doubles as the window's drag region. */}
-      <div className="h-11 shrink-0" style={{ ...dragStyle, paddingLeft: isMac ? 80 : undefined }} />
+      <div className="h-11 shrink-0 border-b" style={{ ...dragStyle, paddingLeft: isMac ? 80 : undefined }} />
 
-      <nav className="flex flex-col gap-0.5 px-2">
+      <nav className="flex flex-col gap-0.5 px-2 pt-2">
         <button
           onClick={() => setSearchOpen(true)}
           className="flex h-8 items-center gap-2 rounded-md px-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -36,7 +36,7 @@ export function ProjectSidebar() {
         </button>
       </nav>
 
-      <div className="mx-3 my-2 border-t border-sidebar-border" />
+      <div className="h-2" />
 
       <div className="flex h-8 shrink-0 items-center justify-between pr-2 pl-4">
         <span className="text-xs font-medium text-muted-foreground">Workspaces</span>

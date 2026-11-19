@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Globe, RotateCw } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
+import { PerSession } from "./per-session";
 
 function normalize(input: string): string {
   const v = input.trim();
@@ -11,7 +12,7 @@ function normalize(input: string): string {
 }
 
 /** Minimal embedded browser, mainly for previewing local dev servers. */
-export function BrowserView() {
+function SessionBrowser() {
   const [input, setInput] = useState("");
   const [url, setUrl] = useState("");
   const [nonce, setNonce] = useState(0);
@@ -48,4 +49,10 @@ export function BrowserView() {
       )}
     </div>
   );
+}
+
+
+/** Browser tab: each session keeps its own page. */
+export function BrowserView({ active }: { active: boolean }) {
+  return <PerSession active={active} render={() => <SessionBrowser />} />;
 }
