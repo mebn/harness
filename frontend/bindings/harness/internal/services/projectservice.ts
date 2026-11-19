@@ -29,6 +29,9 @@ export function DeleteSession(id: string): $CancellablePromise<void> {
     return $Call.ByID(1506363919, id);
 }
 
+/**
+ * RemoveProject forgets a workspace (its folder on disk is untouched) and its sessions.
+ */
 export function RemoveProject(id: string): $CancellablePromise<void> {
     return $Call.ByID(4089292055, id);
 }

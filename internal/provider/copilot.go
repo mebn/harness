@@ -39,11 +39,23 @@ func (Copilot) Info() Info {
 
 func (Copilot) Run(ctx context.Context, req Request) (<-chan Event, error) {
 	// --session-id both creates a new session with that id and resumes an existing one.
-	args := []string{"-p", req.Prompt, "--output-format", "json", "--session-id", req.SessionID}
+	prompt := req.Prompt
+	var attachArgs []string
+	for _, a := range req.Attachments {
+		p := platform.PathFor(req.Env, a.Path)
+		if a.IsImage || a.MimeType == "application/pdf" {
+			attachArgs = append(attachArgs, "--attachment", p) // native image/document input
+		} else {
+			prompt += "\n@" + p // @-mentions add the file to the context
+		}
+	}
+	args := []string{"-p", prompt, "--output-format", "json", "--session-id", req.SessionID}
+	args = append(args, attachArgs...)
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
-	if req.Effort != "" {
+	// "auto" picks the model per request and rejects an explicit effort.
+	if req.Effort != "" && req.Model != "auto" {
 		args = append(args, "--reasoning-effort", req.Effort)
 	}
 	switch req.Mode {

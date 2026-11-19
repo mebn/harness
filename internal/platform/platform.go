@@ -59,6 +59,15 @@ func EnvForPath(p string) Env {
 	return EnvNative
 }
 
+// PathFor returns how a host path is spelled inside env (e.g. /mnt/c/... in WSL).
+func PathFor(env Env, hostPath string) string {
+	if env.Normalize() == EnvWSL {
+		_, p := ToWSLPath(hostPath)
+		return p
+	}
+	return hostPath
+}
+
 // ToWSLPath converts a Windows path to a Linux path inside WSL.
 // UNC paths (\\wsl.localhost\Distro\... or \\wsl$\Distro\...) also yield the distro.
 func ToWSLPath(p string) (distro, linuxPath string) {

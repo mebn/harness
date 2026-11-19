@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, File, Folder } from "lucide-react";
-import { IconButton } from "@/components/common/icon-button";
+import { ChevronRight, File, Folder, FolderTree } from "lucide-react";
 import { FileService, type FileEntry, type GitStatus } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/stores/app-store";
 import { useGitStatus } from "@/stores/git-store";
 import { CodeView } from "./code-view";
+import { SubTabBar, closeTab } from "./sub-tabs";
 
 const POLL_MS = 2000;
 
@@ -49,16 +49,19 @@ function buildDecorations(status: GitStatus | undefined) {
   return { files, dirs };
 }
 
-/** Live file tree for the active project, with git decorations and a read-only preview. */
+const TREE = "tree";
+
+type OpenTabs = { files: string[]; active: string };
+
+/** Live file tree for the active project plus open files as tabs (like editor tabs). */
 export function FileExplorer({ active }: { active: boolean }) {
   const project = useActiveProject();
   const { status } = useGitStatus(project?.id, active);
-  const [preview, setPreview] = useState<{ path: string; content: string } | null>(null);
+  // Open file tabs per project, so switching sessions keeps each workspace's tabs.
+  const [byProject, setByProject] = useState<Record<string, OpenTabs>>({});
   const [tick, setTick] = useState(0);
 
-  useEffect(() => setPreview(null), [project?.id]);
-
-  // Re-list open folders periodically and whenever git sees a change.
+  // Re-list open folders (and re-read open files) periodically and whenever git sees a change.
   useEffect(() => {
     if (!active) return;
     const t = setInterval(() => setTick((n) => n + 1), POLL_MS);
@@ -72,37 +75,64 @@ export function FileExplorer({ active }: { active: boolean }) {
     return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No project</div>;
   }
 
-  const open = async (path: string) => {
-    try {
-      setPreview({ path, content: await FileService.Read(project.id, path) });
-    } catch (e) {
-      setPreview({ path, content: String(e) });
-    }
-  };
-
-  if (preview) {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-          <IconButton label="Back" onClick={() => setPreview(null)}>
-            <ArrowLeft />
-          </IconButton>
-          <span className="truncate font-mono text-xs text-muted-foreground">{preview.path}</span>
-        </div>
-        <CodeView path={preview.path} code={preview.content} />
-      </div>
-    );
-  }
+  const tabs = byProject[project.id] ?? { files: [], active: TREE };
+  const setTabs = (next: OpenTabs) => setByProject((m) => ({ ...m, [project.id]: next }));
+  const open = (path: string) =>
+    setTabs({ files: tabs.files.includes(path) ? tabs.files : [...tabs.files, path], active: path });
 
   return (
-    <Ctx.Provider value={{ projectId: project.id, tick, onOpen: open, ...decorations }}>
-      <div className="h-full overflow-auto py-1">
-        <DirNode key={project.id} path="" depth={0} />
+    <div className="flex h-full flex-col">
+      <SubTabBar
+        tabs={[
+          { id: TREE, label: "", icon: <FolderTree />, title: "Explorer" },
+          ...tabs.files.map((path) => ({
+            id: path,
+            label: path.split("/").pop()!,
+            title: path,
+            closable: true,
+          })),
+        ]}
+        active={tabs.active}
+        onSelect={(id) => setTabs({ ...tabs, active: id })}
+        onClose={(id) => {
+          const next = closeTab(tabs.files.map((p) => ({ id: p })), id, tabs.active);
+          setTabs({ files: next.tabs.map((t) => t.id), active: next.active || TREE });
+        }}
+      />
+      <div className="relative min-h-0 flex-1">
+        <div className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
+          <Ctx.Provider value={{ projectId: project.id, tick, onOpen: open, ...decorations }}>
+            <DirNode key={project.id} path="" depth={0} />
+          </Ctx.Provider>
+        </div>
+        {tabs.active !== TREE && (
+          <OpenFile key={`${project.id}:${tabs.active}`} projectId={project.id} path={tabs.active} tick={tick} />
+        )}
       </div>
-    </Ctx.Provider>
+    </div>
   );
 }
 
+/** An open file tab; re-reads the file on every tick so it shows the latest content. */
+function OpenFile({ projectId, path, tick }: { projectId: string; path: string; tick: number }) {
+  const [content, setContent] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    FileService.Read(projectId, path)
+      .then((text) => !cancelled && setContent((prev) => (prev === text ? prev : text)))
+      .catch((e) => !cancelled && setContent(String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, path, tick]);
+
+  if (content === null) return null;
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <CodeView path={path} code={content} />
+    </div>
+  );
+}
 function DirNode({ path, depth }: { path: string; depth: number }) {
   const { projectId, tick } = useTree();
   const [entries, setEntries] = useState<FileEntry[] | null>(null);

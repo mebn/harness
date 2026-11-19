@@ -7,6 +7,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"harness/internal/attach"
 	"harness/internal/provider"
 	"harness/internal/services"
 	"harness/internal/store"
@@ -37,6 +38,12 @@ func main() {
 	}
 	defer db.Close()
 
+	attachDir, err := attach.DefaultDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	files := attach.Store{Dir: attachDir}
+
 	providers := provider.NewRegistry(provider.Claude{}, provider.Copilot{})
 	emit := services.AppEmitter
 	usageSvc := services.NewUsageService(db, emit)
@@ -46,15 +53,16 @@ func main() {
 		Description: "A desktop harness for coding agents",
 		Services: []application.Service{
 			application.NewService(&services.SystemService{}),
-			application.NewService(services.NewProjectService(db, providers)),
-			application.NewService(services.NewChatService(db, providers, usageSvc, emit)),
+			application.NewService(services.NewProjectService(db, providers, files)),
+			application.NewService(services.NewChatService(db, providers, usageSvc, files, emit)),
 			application.NewService(usageSvc),
 			application.NewService(services.NewFileService(db)),
 			application.NewService(services.NewGitService(db)),
 			application.NewService(services.NewTerminalService(db, emit)),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler:    application.AssetFileServerFS(assets),
+			Middleware: files.Middleware, // serves /attachments/... for image previews
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

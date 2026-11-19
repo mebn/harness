@@ -48,7 +48,17 @@ type Request struct {
 	Effort    string
 	Mode      string
 	SessionID string // provider-side session id
-	Resume    bool   // true when SessionID already exists on the provider side
+	// Attachments are files saved on the host; providers decide how to pass them.
+	Attachments []Attachment
+	Resume      bool // true when SessionID already exists on the provider side
+}
+
+// Attachment is a file the user attached to a turn.
+type Attachment struct {
+	Name     string
+	MimeType string
+	Path     string // host path
+	IsImage  bool
 }
 
 type EventKind int

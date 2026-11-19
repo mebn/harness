@@ -2,13 +2,16 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"harness/internal/attach"
 	"harness/internal/platform"
 	"harness/internal/provider"
 	"harness/internal/store"
@@ -22,13 +25,14 @@ type ChatService struct {
 	providers *provider.Registry
 	emit      Emitter
 	usage     *UsageService
+	files     attach.Store
 
 	mu   sync.Mutex
 	runs map[string]context.CancelFunc // sessionID -> cancel
 }
 
-func NewChatService(s *store.Store, r *provider.Registry, u *UsageService, emit Emitter) *ChatService {
-	return &ChatService{store: s, providers: r, usage: u, emit: emit, runs: map[string]context.CancelFunc{}}
+func NewChatService(s *store.Store, r *provider.Registry, u *UsageService, files attach.Store, emit Emitter) *ChatService {
+	return &ChatService{store: s, providers: r, usage: u, files: files, emit: emit, runs: map[string]context.CancelFunc{}}
 }
 
 func (c *ChatService) Providers() []provider.Info { return c.providers.Infos() }
@@ -72,10 +76,17 @@ func (c *ChatService) ServiceShutdown() error {
 	return nil
 }
 
+// AttachmentInput is a file sent from the UI (base64, since bindings are JSON).
+type AttachmentInput struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"` // base64
+}
+
 // Send starts a turn with the session's current provider settings.
-func (c *ChatService) Send(sessionID, prompt string) error {
+func (c *ChatService) Send(sessionID, prompt string, attachments []AttachmentInput) error {
 	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
+	if prompt == "" && len(attachments) == 0 {
 		return errors.New("empty prompt")
 	}
 	sess, err := c.store.Session(sessionID)
@@ -91,6 +102,11 @@ func (c *ChatService) Send(sessionID, prompt string) error {
 		return errors.New("unknown provider: " + sess.Provider)
 	}
 
+	saved, err := c.saveAttachments(sessionID, attachments)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	c.mu.Lock()
 	if _, busy := c.runs[sessionID]; busy {
@@ -101,13 +117,29 @@ func (c *ChatService) Send(sessionID, prompt string) error {
 	c.runs[sessionID] = cancel
 	c.mu.Unlock()
 
+	parts := []store.Part{}
+	reqAttachments := []provider.Attachment{}
+	for _, a := range saved {
+		parts = append(parts, store.Part{Type: "attachment", FileName: a.Name, FilePath: a.Path, MimeType: a.MimeType, URL: a.URL})
+		reqAttachments = append(reqAttachments, provider.Attachment{Name: a.Name, MimeType: a.MimeType, Path: a.Path, IsImage: a.IsImage()})
+	}
+	if prompt != "" {
+		parts = append(parts, store.Part{Type: "text", Text: prompt})
+	}
 	user := store.Message{ID: uuid.NewString(), SessionID: sessionID, Role: "user",
-		Parts: []store.Part{{Type: "text", Text: prompt}}, CreatedAt: time.Now().UnixMilli()}
+		Parts: parts, CreatedAt: time.Now().UnixMilli()}
 	_ = c.store.SaveMessage(user)
 	c.emit(EventChatMessage, user)
 
 	if sess.Title == "New session" {
-		sess.Title = titleFrom(prompt)
+		if prompt != "" {
+			sess.Title = titleFrom(prompt)
+		} else {
+			sess.Title = titleFrom(saved[0].Name)
+		}
+	}
+	if prompt == "" {
+		prompt = "See the attached files."
 	}
 	_ = c.store.UpdateSession(&sess) // bumps updated_at, persists title
 	c.emit(EventSessionUpdated, sess)
@@ -117,6 +149,7 @@ func (c *ChatService) Send(sessionID, prompt string) error {
 		Prompt: prompt, Dir: proj.Path, Env: platform.EnvForPath(proj.Path),
 		Model: sess.Model, Effort: sess.Effort, Mode: sess.Mode,
 		SessionID: sess.ProviderSessionID, Resume: sess.Started,
+		Attachments: reqAttachments,
 	}
 	go c.run(ctx, sess, prov, req)
 	return nil
@@ -201,6 +234,23 @@ func (c *ChatService) flush(t *transcript, persist bool) {
 	if persist {
 		_ = c.store.SaveMessage(msg)
 	}
+}
+
+// saveAttachments decodes and stores uploaded files for a session.
+func (c *ChatService) saveAttachments(sessionID string, in []AttachmentInput) ([]attach.Attachment, error) {
+	out := make([]attach.Attachment, 0, len(in))
+	for _, a := range in {
+		data, err := base64.StdEncoding.DecodeString(a.Data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid data", a.Name)
+		}
+		saved, err := c.files.Save(sessionID, a.Name, a.MimeType, data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, saved)
+	}
+	return out, nil
 }
 
 func titleFrom(prompt string) string {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"harness/internal/attach"
 	"harness/internal/platform"
 	"harness/internal/provider"
 	"harness/internal/store"
@@ -16,10 +17,11 @@ import (
 type ProjectService struct {
 	store     *store.Store
 	providers *provider.Registry
+	files     attach.Store
 }
 
-func NewProjectService(s *store.Store, r *provider.Registry) *ProjectService {
-	return &ProjectService{store: s, providers: r}
+func NewProjectService(s *store.Store, r *provider.Registry, files attach.Store) *ProjectService {
+	return &ProjectService{store: s, providers: r, files: files}
 }
 
 // Tree returns all projects with their sessions. Env is always derived from the path.
@@ -46,7 +48,19 @@ func (p *ProjectService) AddProject(path string) (store.Project, error) {
 	return proj, p.store.InsertProject(&proj)
 }
 
-func (p *ProjectService) RemoveProject(id string) error { return p.store.DeleteProject(id) }
+// RemoveProject forgets a workspace (its folder on disk is untouched) and its sessions.
+func (p *ProjectService) RemoveProject(id string) error {
+	if tree, err := p.store.Tree(); err == nil {
+		for _, n := range tree {
+			if n.Project.ID == id {
+				for _, s := range n.Sessions {
+					_ = p.files.RemoveSession(s.ID)
+				}
+			}
+		}
+	}
+	return p.store.DeleteProject(id)
+}
 
 func (p *ProjectService) update(id string, fn func(*store.Project)) error {
 	proj, err := p.store.Project(id)
@@ -96,7 +110,10 @@ func (p *ProjectService) RenameSession(id, title string) error {
 	return p.store.UpdateSession(&sess)
 }
 
-func (p *ProjectService) DeleteSession(id string) error { return p.store.DeleteSession(id) }
+func (p *ProjectService) DeleteSession(id string) error {
+	_ = p.files.RemoveSession(id)
+	return p.store.DeleteSession(id)
+}
 
 // UpdateSessionSettings changes provider/model/effort/mode for future turns.
 // Switching provider starts a fresh provider-side conversation.

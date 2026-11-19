@@ -24,9 +24,9 @@ type Session struct {
 	// Started is true once the provider has created its session (resume instead of create).
 	// LastStatus is the outcome of the latest turn: "done" | "waiting" | "error" | "".
 	LastStatus string `json:"lastStatus"`
-	Started   bool  `json:"started"`
-	CreatedAt int64 `json:"createdAt"`
-	UpdatedAt int64 `json:"updatedAt"`
+	Started    bool   `json:"started"`
+	CreatedAt  int64  `json:"createdAt"`
+	UpdatedAt  int64  `json:"updatedAt"`
 }
 
 // ProjectTree is a project with its sessions, used to render the sidebar.
@@ -37,7 +37,7 @@ type ProjectTree struct {
 
 // Part is one block of a message: text or a tool call.
 type Part struct {
-	Type       string `json:"type"` // "text" | "tool" | "error"
+	Type       string `json:"type"` // "text" | "tool" | "error" | "attachment"
 	Text       string `json:"text,omitempty"`
 	ToolID     string `json:"toolId,omitempty"`
 	ToolName   string `json:"toolName,omitempty"`
@@ -45,6 +45,11 @@ type Part struct {
 	ToolOutput string `json:"toolOutput,omitempty"`
 	IsError    bool   `json:"isError,omitempty"`
 	Done       bool   `json:"done,omitempty"`
+	// Attachment fields (Type "attachment").
+	FileName string `json:"fileName,omitempty"`
+	FilePath string `json:"filePath,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+	URL      string `json:"url,omitempty"`
 }
 
 // Message is a chat message shown in a session.

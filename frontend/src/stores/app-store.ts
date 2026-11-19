@@ -10,6 +10,7 @@ import {
   type SystemInfo,
 } from "@/lib/backend";
 import { storage } from "@/lib/storage";
+import type { AttachmentInput } from "@bindings/harness/internal/services/models";
 
 const ACTIVE_KEY = "harness.activeSession";
 const SEEN_KEY = "harness.seen";
@@ -49,7 +50,7 @@ type AppState = {
   selectSession: (id: string | null) => Promise<void>;
   updateSettings: (id: string, patch: Partial<SessionSettings>) => Promise<void>;
 
-  send: (sessionId: string, prompt: string) => Promise<void>;
+  send: (sessionId: string, prompt: string, attachments?: AttachmentInput[]) => Promise<void>;
   stop: (sessionId: string) => void;
   markSeen: (sessionId: string) => void;
 
@@ -174,10 +175,10 @@ export const useApp = create<AppState>((set, get) => ({
     set({ tree: mapSession(get().tree, id, () => saved) });
   },
 
-  send: async (sessionId, prompt) => {
+  send: async (sessionId, prompt, attachments = []) => {
     set({ running: { ...get().running, [sessionId]: true } });
     try {
-      await ChatService.Send(sessionId, prompt);
+      await ChatService.Send(sessionId, prompt, attachments);
     } catch (err) {
       set({ running: { ...get().running, [sessionId]: false } });
       throw err;

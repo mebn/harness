@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Globe, RotateCw } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
+import { cn } from "@/lib/utils";
 import { PerSession } from "./per-session";
+import { SubTabBar, closeTab } from "./sub-tabs";
 
 function normalize(input: string): string {
   const v = input.trim();
@@ -11,8 +13,8 @@ function normalize(input: string): string {
   return `https://${v}`;
 }
 
-/** Minimal embedded browser, mainly for previewing local dev servers. */
-function SessionBrowser() {
+/** One page: minimal embedded browser, mainly for previewing local dev servers. */
+function BrowserPage({ onNavigate }: { onNavigate: (url: string) => void }) {
   const [input, setInput] = useState("");
   const [url, setUrl] = useState("");
   const [nonce, setNonce] = useState(0);
@@ -22,6 +24,7 @@ function SessionBrowser() {
     setInput(next);
     setUrl(next);
     setNonce((n) => n + 1);
+    onNavigate(next);
   };
 
   return (
@@ -52,7 +55,65 @@ function SessionBrowser() {
 }
 
 
-/** Browser tab: each session keeps its own page. */
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+let pageSeq = 0;
+const newPage = () => ({ id: `page-${++pageSeq}`, url: "" });
+
+/** Several pages for one session, as sub-tabs. */
+function SessionBrowser() {
+  const [pages, setPages] = useState(() => [newPage()]);
+  const [current, setCurrent] = useState(pages[0].id);
+
+  const add = () => {
+    const page = newPage();
+    setPages([...pages, page]);
+    setCurrent(page.id);
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <SubTabBar
+        tabs={pages.map((p) => ({
+          id: p.id,
+          label: p.url ? hostLabel(p.url) : "New tab",
+          title: p.url || "New tab",
+          icon: <Globe />,
+          closable: true,
+        }))}
+        active={current}
+        onSelect={setCurrent}
+        onClose={(id) => {
+          const next = closeTab(pages, id, current);
+          setPages(next.tabs);
+          setCurrent(next.active);
+        }}
+        onAdd={add}
+        addLabel="New page"
+      />
+      <div className="relative min-h-0 flex-1">
+        {pages.map((p) => (
+          <div key={p.id} className={cn("absolute inset-0", p.id !== current && "invisible")}>
+            <BrowserPage onNavigate={(url) => setPages((list) => list.map((x) => (x.id === p.id ? { ...x, url } : x)))} />
+          </div>
+        ))}
+        {pages.length === 0 && (
+          <button onClick={add} className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground">
+            New page
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Browser tab: each session keeps its own pages. */
 export function BrowserView({ active }: { active: boolean }) {
   return <PerSession active={active} render={() => <SessionBrowser />} />;
 }

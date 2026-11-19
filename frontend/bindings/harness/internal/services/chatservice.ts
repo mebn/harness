@@ -17,6 +17,10 @@ import * as provider$0 from "../provider/models.js";
 // @ts-ignore: Unused imports
 import * as store$0 from "../store/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 export function Messages(sessionID: string): $CancellablePromise<store$0.Message[] | null> {
     return $Call.ByID(2868943861, sessionID);
 }
@@ -42,8 +46,8 @@ export function SearchMessages(query: string): $CancellablePromise<store$0.Messa
 /**
  * Send starts a turn with the session's current provider settings.
  */
-export function Send(sessionID: string, prompt: string): $CancellablePromise<void> {
-    return $Call.ByID(2939044847, sessionID, prompt);
+export function Send(sessionID: string, prompt: string, attachments: $models.AttachmentInput[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2939044847, sessionID, prompt, attachments);
 }
 
 export function Stop(sessionID: string): $CancellablePromise<void> {

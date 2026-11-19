@@ -1,6 +1,12 @@
 package provider
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func collect(parse lineParser, lines ...string) []Event {
 	var out []Event
@@ -48,5 +54,41 @@ func TestParseClaudeRateLimit(t *testing.T) {
 	w := ev[0].Usage.Windows
 	if len(w) != 2 || w[0].Label != "5h" || w[0].Used != 0.07 || w[0].ResetsAt != 1795092000000 || w[1].Label != "Week" {
 		t.Fatalf("windows: %+v", w)
+	}
+}
+
+func TestClaudeInputAttachments(t *testing.T) {
+	dir := t.TempDir()
+	img := filepath.Join(dir, "a.png")
+	os.WriteFile(img, []byte("png-bytes"), 0o644)
+	req := Request{Prompt: "look", Env: "native", Attachments: []Attachment{
+		{Name: "a.png", MimeType: "image/png", Path: img, IsImage: true},
+		{Name: "notes.txt", MimeType: "text/plain", Path: filepath.Join(dir, "notes.txt")},
+	}}
+	in, err := claudeInput(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg struct {
+		Message struct {
+			Content []struct {
+				Type   string `json:"type"`
+				Text   string `json:"text"`
+				Source *struct {
+					MediaType string `json:"media_type"`
+					Data      string `json:"data"`
+				} `json:"source"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(in), &msg); err != nil {
+		t.Fatal(err)
+	}
+	c := msg.Message.Content
+	if len(c) != 2 || c[0].Type != "image" || c[0].Source.MediaType != "image/png" || c[0].Source.Data == "" {
+		t.Fatalf("image block: %+v", c)
+	}
+	if c[1].Type != "text" || !strings.Contains(c[1].Text, "look") || !strings.Contains(c[1].Text, "notes.txt") {
+		t.Fatalf("text block: %+v", c[1])
 	}
 }

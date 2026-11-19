@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Paperclip, Square } from "lucide-react";
+import { IconButton } from "@/components/common/icon-button";
 import { Button } from "@/components/ui/button";
+import { releasePreviews, toInputs, useAttachments } from "@/hooks/use-attachments";
 import type { Session } from "@/lib/backend";
+import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
+import { AttachmentChips } from "./attachment-chips";
 import { OptionPicker } from "./option-picker";
 import { UsageIndicator } from "./usage-indicator";
 
@@ -10,8 +14,11 @@ const MAX_HEIGHT = 240;
 
 export function Composer({ session }: { session: Session }) {
   const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const attachments = useAttachments();
   const providers = useApp((s) => s.providers);
   const running = useApp((s) => !!s.running[session.id]);
   const send = useApp((s) => s.send);
@@ -19,6 +26,8 @@ export function Composer({ session }: { session: Session }) {
   const update = useApp((s) => s.updateSettings);
 
   const provider = providers.find((p) => p.id === session.provider) ?? providers[0];
+  const canSend = !running && (text.trim() !== "" || attachments.items.length > 0);
+  const error = sendError ?? attachments.error;
 
   // Focus the input when switching sessions.
   useEffect(() => ref.current?.focus(), [session.id]);
@@ -32,15 +41,19 @@ export function Composer({ session }: { session: Session }) {
   }, [text]);
 
   const submit = async () => {
+    if (!canSend) return;
     const prompt = text.trim();
-    if (!prompt || running) return;
+    const pending = attachments.take();
     setText("");
-    setError(null);
+    setSendError(null);
+    attachments.setError(null);
     try {
-      await send(session.id, prompt);
+      await send(session.id, prompt, await toInputs(pending));
+      releasePreviews(pending);
     } catch (e) {
       setText(prompt);
-      setError(String(e));
+      attachments.restore(pending);
+      setSendError(String(e));
     }
   };
 
@@ -52,13 +65,39 @@ export function Composer({ session }: { session: Session }) {
       <div className="mb-1.5 flex justify-end px-1">
         <UsageIndicator />
       </div>
-      <div className="rounded-xl border bg-card shadow-sm focus-within:border-ring/60">
+      <div
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          attachments.add(e.dataTransfer.files);
+        }}
+        className={cn(
+          "rounded-xl border bg-card shadow-sm focus-within:border-ring/60",
+          dragOver && "border-ring ring-2 ring-ring/30",
+        )}
+      >
+        <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
         <textarea
           ref={ref}
           value={text}
           rows={1}
           placeholder="Ask anything…"
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            // Pasted screenshots and copied files become attachments.
+            if (e.clipboardData.files.length > 0) {
+              e.preventDefault();
+              attachments.add(e.clipboardData.files);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -68,6 +107,19 @@ export function Composer({ session }: { session: Session }) {
           className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 pb-1 outline-none select-text placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-0.5 px-2 pb-2">
+          <IconButton label="Attach files" onClick={() => fileInput.current?.click()}>
+            <Paperclip />
+          </IconButton>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files) attachments.add(e.target.files);
+              e.target.value = ""; // allow picking the same file again
+            }}
+          />
           <OptionPicker
             value={provider.id}
             options={providers.map((p) => ({ id: p.id, label: p.name }))}
@@ -95,7 +147,7 @@ export function Composer({ session }: { session: Session }) {
               <Square className="size-3.5 fill-current" />
             </Button>
           ) : (
-            <Button size="icon" className="size-8 rounded-lg" disabled={!text.trim()} onClick={() => void submit()} aria-label="Send">
+            <Button size="icon" className="size-8 rounded-lg" disabled={!canSend} onClick={() => void submit()} aria-label="Send">
               <ArrowUp className="size-4" />
             </Button>
           )}

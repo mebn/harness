@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"harness/internal/platform"
@@ -55,9 +58,20 @@ func (Claude) Run(ctx context.Context, req Request) (<-chan Event, error) {
 	}
 	args = append(args, "--permission-mode", claudeMode(req.Mode))
 
+	stdin := req.Prompt
+	if len(req.Attachments) > 0 {
+		// Attachments need structured input: images go in as native image blocks.
+		input, err := claudeInput(req)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--input-format", "stream-json")
+		stdin = input
+	}
+
 	cmd := platform.Command(ctx, req.Env, req.Dir, "claude", args...)
 	// The prompt goes over stdin to avoid any shell/argv quoting issues.
-	return runJSONL(ctx, cmd, req.Prompt, parseClaudeLine)
+	return runJSONL(ctx, cmd, stdin, parseClaudeLine)
 }
 
 func claudeMode(mode string) string {
@@ -160,4 +174,56 @@ func claudeUsage(l claudeLine) *usage.Snapshot {
 		return nil
 	}
 	return s
+}
+
+// Images larger than this are passed as a path instead (API image size limit).
+const maxInlineImage = 5 << 20
+
+// claudeInput builds one stream-json user message with text, images and file paths.
+func claudeInput(req Request) (string, error) {
+	type source struct {
+		Type      string `json:"type"`
+		MediaType string `json:"media_type"`
+		Data      string `json:"data"`
+	}
+	type block struct {
+		Type   string  `json:"type"`
+		Text   string  `json:"text,omitempty"`
+		Source *source `json:"source,omitempty"`
+	}
+	blocks := []block{}
+	var files []string
+	for _, a := range req.Attachments {
+		if a.IsImage {
+			if data, err := os.ReadFile(a.Path); err == nil && len(data) <= maxInlineImage {
+				blocks = append(blocks, block{Type: "image", Source: &source{
+					Type: "base64", MediaType: a.MimeType, Data: base64.StdEncoding.EncodeToString(data),
+				}})
+				continue
+			}
+		}
+		files = append(files, platform.PathFor(req.Env, a.Path))
+	}
+	blocks = append(blocks, block{Type: "text", Text: withFileList(req.Prompt, files)})
+
+	msg := map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": blocks},
+	}
+	b, err := json.Marshal(msg)
+	return string(b) + "\n", err
+}
+
+// withFileList appends attached file paths so the agent can open them with its tools.
+func withFileList(prompt string, paths []string) string {
+	if len(paths) == 0 {
+		return prompt
+	}
+	var sb strings.Builder
+	sb.WriteString(prompt)
+	sb.WriteString("\n\nAttached files:")
+	for _, p := range paths {
+		sb.WriteString("\n- " + p)
+	}
+	return sb.String()
 }

@@ -32,7 +32,7 @@ export interface MessageHit {
  */
 export interface Part {
     /**
-     * "text" | "tool" | "error"
+     * "text" | "tool" | "error" | "attachment"
      */
     "type": string;
     "text"?: string;
@@ -42,6 +42,14 @@ export interface Part {
     "toolOutput"?: string;
     "isError"?: boolean;
     "done"?: boolean;
+
+    /**
+     * Attachment fields (Type "attachment").
+     */
+    "fileName"?: string;
+    "filePath"?: string;
+    "mimeType"?: string;
+    "url"?: string;
 }
 
 /**

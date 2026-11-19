@@ -78,6 +78,8 @@ function TabBar() {
               key={kind}
               role="tab"
               aria-selected={selected}
+              aria-label={label}
+              title={label}
               draggable
               onClick={() => activate(kind)}
               onDragStart={(e) => {
@@ -104,15 +106,14 @@ function TabBar() {
               onDragEnd={endDrag}
               style={{ "--wails-draggable": "no-drag" } as React.CSSProperties}
               className={cn(
-                "relative flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground",
+                "relative flex size-8 shrink-0 cursor-default items-center justify-center rounded-md text-xs text-muted-foreground hover:text-foreground",
                 selected && "bg-accent text-foreground",
                 dragging === kind && "opacity-40",
               )}
             >
               {dragging && dropIndex === i && <DropMarker side="left" />}
               {dragging && dropIndex === i + 1 && i === order.length - 1 && <DropMarker side="right" />}
-              <Icon className="size-3.5" />
-              <span>{label}</span>
+              <Icon className="size-4" />
             </div>
           );
         })}

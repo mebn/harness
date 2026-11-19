@@ -19,6 +19,7 @@ export {
 };
 
 export type {
+    AttachmentInput,
     ChatStatus,
     FileEntry,
     SystemInfo,
