@@ -99,6 +99,16 @@ export interface Session {
      */
     "lastStatus": string;
     "started": boolean;
+
+    /**
+     * ContextTokens is how much of the model's context the latest turn used (0 if unknown).
+     */
+    "contextTokens": number;
+
+    /**
+     * ContextWindow is the model's context size as last reported (0 if unknown).
+     */
+    "contextWindow": number;
     "createdAt": number;
     "updatedAt": number;
 }

@@ -1,20 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { SquareTerminal } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Events, TerminalService } from "@/lib/backend";
 import { useTheme } from "@/stores/theme-store";
-import { cn } from "@/lib/utils";
-import { PerSession } from "./per-session";
-import { SubTabBar, closeTab } from "./sub-tabs";
 
+// Transparent backgrounds let the window card show through.
 const THEMES = {
-  dark: { background: "#1c1c1c", foreground: "#e5e5e5", cursor: "#e5e5e5", selectionBackground: "#ffffff30" },
+  dark: { background: "#00000000", foreground: "#e5e5e5", cursor: "#e5e5e5", selectionBackground: "#ffffff30" },
   light: {
-    background: "#fafafa",
+    background: "#00000000",
     foreground: "#262626",
     cursor: "#262626",
-    cursorAccent: "#fafafa",
+    cursorAccent: "#ffffff",
     selectionBackground: "#00000020",
     yellow: "#a16207",
     brightYellow: "#ca8a04",
@@ -31,11 +28,10 @@ function decode(b64: string): Uint8Array {
 }
 
 /**
- * An interactive shell for one session, in its project folder. The backend picks
- * WSL or a native shell from where that folder lives. Starts on mount (PerSession
- * mounts it the first time the session is shown) and lives until unmount.
+ * An interactive shell in a project folder. The backend picks WSL or a native shell
+ * from where that folder lives. Starts on mount and lives until unmount.
  */
-function SessionTerminal({ projectId, active }: { projectId: string; active: boolean }) {
+export function TerminalView({ projectId, active, fontSize = 12 }: { projectId: string; active: boolean; fontSize?: number }) {
   const theme = useTheme((s) => s.theme);
   const container = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -46,10 +42,11 @@ function SessionTerminal({ projectId, active }: { projectId: string; active: boo
 
     const term = new Terminal({
       fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
-      fontSize: 12,
+      fontSize,
       cursorBlink: true,
       theme: THEMES[useTheme.getState().theme],
       allowProposedApi: true,
+      allowTransparency: true,
     });
     termRef.current = term;
     const fit = new FitAddon();
@@ -94,76 +91,28 @@ function SessionTerminal({ projectId, active }: { projectId: string; active: boo
       if (id) void TerminalService.Close(id);
       term.dispose();
     };
-    // projectId is fixed for this instance (one terminal per session).
+    // projectId is fixed for this instance.
   }, [projectId]);
 
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = THEMES[theme];
   }, [theme]);
 
+  // Zooming changes the font size; refit so the shell gets the new rows/columns.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || term.options.fontSize === fontSize) return;
+    term.options.fontSize = fontSize;
+    requestAnimationFrame(() => fitRef.current?.fit());
+  }, [fontSize]);
+
   useEffect(() => {
     if (active) requestAnimationFrame(() => fitRef.current?.fit());
   }, [active]);
 
   return (
-    <div className="h-full w-full p-2" style={{ background: THEMES[theme].background }}>
+    <div className="terminal-host h-full w-full px-3 pt-1 pb-2">
       <div ref={container} className="h-full w-full" />
     </div>
-  );
-}
-
-
-/** Several shells for one session, as sub-tabs. Closing the last one leaves an empty state. */
-function SessionTerminals({ projectId, active }: { projectId: string; active: boolean }) {
-  const [tabs, setTabs] = useState(() => [{ id: nextTerminalId(), n: 1 }]);
-  const [current, setCurrent] = useState(tabs[0].id);
-
-  const add = () => {
-    const n = Math.max(0, ...tabs.map((t) => t.n)) + 1;
-    const tab = { id: nextTerminalId(), n };
-    setTabs([...tabs, tab]);
-    setCurrent(tab.id);
-  };
-
-  return (
-    <div className="flex h-full flex-col">
-      <SubTabBar
-        tabs={tabs.map((t) => ({ id: t.id, label: `${t.n}`, icon: <SquareTerminal />, title: `Terminal ${t.n}`, closable: true }))}
-        active={current}
-        onSelect={setCurrent}
-        onClose={(id) => {
-          const next = closeTab(tabs, id, current);
-          setTabs(next.tabs);
-          setCurrent(next.active);
-        }}
-        onAdd={add}
-        addLabel="New terminal"
-      />
-      <div className="relative min-h-0 flex-1">
-        {tabs.map((t) => (
-          <div key={t.id} className={cn("absolute inset-0", t.id !== current && "invisible")}>
-            <SessionTerminal projectId={projectId} active={active && t.id === current} />
-          </div>
-        ))}
-        {tabs.length === 0 && (
-          <button onClick={add} className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground">
-            New terminal
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-let terminalSeq = 0;
-const nextTerminalId = () => `term-${++terminalSeq}`;
-
-/** Terminal tab: each session gets its own shells; switching sessions switches shells. */
-export function TerminalView({ active }: { active: boolean }) {
-  return (
-    <PerSession
-      active={active}
-      render={(inst, visible) => <SessionTerminals projectId={inst.projectId} active={visible} />}
-    />
   );
 }

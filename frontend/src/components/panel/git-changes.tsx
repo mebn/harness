@@ -4,7 +4,7 @@ import { IconButton } from "@/components/common/icon-button";
 import { Button } from "@/components/ui/button";
 import { GitService, type GitFile, type GitStatus } from "@/lib/backend";
 import { cn } from "@/lib/utils";
-import { useActiveProject } from "@/stores/app-store";
+import { useApp } from "@/stores/app-store";
 import { useGitStatus } from "@/stores/git-store";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -15,9 +15,9 @@ const STATUS_STYLE: Record<string, string> = {
   R: "text-sky-600 dark:text-sky-400",
 };
 
-/** Working-tree changes for the active project, with commit and push. */
-export function GitChanges({ active }: { active: boolean }) {
-  const project = useActiveProject();
+/** Working-tree changes for a project, with commit and push. */
+export function GitChanges({ projectId, active }: { projectId: string; active: boolean }) {
+  const project = useApp((s) => s.tree.find((n) => n.project.id === projectId)?.project);
   const { status, error, refresh } = useGitStatus(project?.id, active);
 
   if (!project) return <Centered>No project</Centered>;

@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { ChevronRight, File, Folder, FolderTree } from "lucide-react";
 import { FileService, type FileEntry, type GitStatus } from "@/lib/backend";
 import { cn } from "@/lib/utils";
-import { useActiveProject } from "@/stores/app-store";
 import { useGitStatus } from "@/stores/git-store";
 import { CodeView } from "./code-view";
 import { SubTabBar, closeTab } from "./sub-tabs";
@@ -53,12 +52,10 @@ const TREE = "tree";
 
 type OpenTabs = { files: string[]; active: string };
 
-/** Live file tree for the active project plus open files as tabs (like editor tabs). */
-export function FileExplorer({ active }: { active: boolean }) {
-  const project = useActiveProject();
-  const { status } = useGitStatus(project?.id, active);
-  // Open file tabs per project, so switching sessions keeps each workspace's tabs.
-  const [byProject, setByProject] = useState<Record<string, OpenTabs>>({});
+/** Live file tree for a project plus open files as tabs (like editor tabs). */
+export function FileExplorer({ projectId, active }: { projectId: string; active: boolean }) {
+  const { status } = useGitStatus(projectId, active);
+  const [tabs, setTabs] = useState<OpenTabs>({ files: [], active: TREE });
   const [tick, setTick] = useState(0);
 
   // Re-list open folders (and re-read open files) periodically and whenever git sees a change.
@@ -71,12 +68,6 @@ export function FileExplorer({ active }: { active: boolean }) {
 
   const decorations = useMemo(() => buildDecorations(status), [status]);
 
-  if (!project) {
-    return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No project</div>;
-  }
-
-  const tabs = byProject[project.id] ?? { files: [], active: TREE };
-  const setTabs = (next: OpenTabs) => setByProject((m) => ({ ...m, [project.id]: next }));
   const open = (path: string) =>
     setTabs({ files: tabs.files.includes(path) ? tabs.files : [...tabs.files, path], active: path });
 
@@ -101,12 +92,12 @@ export function FileExplorer({ active }: { active: boolean }) {
       />
       <div className="relative min-h-0 flex-1">
         <div className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
-          <Ctx.Provider value={{ projectId: project.id, tick, onOpen: open, ...decorations }}>
-            <DirNode key={project.id} path="" depth={0} />
+          <Ctx.Provider value={{ projectId, tick, onOpen: open, ...decorations }}>
+            <DirNode path="" depth={0} />
           </Ctx.Provider>
         </div>
         {tabs.active !== TREE && (
-          <OpenFile key={`${project.id}:${tabs.active}`} projectId={project.id} path={tabs.active} tick={tick} />
+          <OpenFile key={tabs.active} projectId={projectId} path={tabs.active} tick={tick} />
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"os"
 	"runtime"
 
 	"harness/internal/platform"
@@ -10,6 +11,8 @@ import (
 type SystemInfo struct {
 	OS     string `json:"os"`
 	HasWSL bool   `json:"hasWsl"`
+	// Hostname of the machine the server runs on.
+	Hostname string `json:"hostname"`
 }
 
 // SystemService describes the machine the server runs on.
@@ -17,7 +20,8 @@ type SystemInfo struct {
 type SystemService struct{}
 
 func (SystemService) Info() SystemInfo {
-	return SystemInfo{OS: runtime.GOOS, HasWSL: platform.HasWSL()}
+	host, _ := os.Hostname()
+	return SystemInfo{OS: runtime.GOOS, HasWSL: platform.HasWSL(), Hostname: host}
 }
 
 // Activity reports active agent turns and open terminals. A plain function rather than a

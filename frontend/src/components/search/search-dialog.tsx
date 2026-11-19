@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder, FolderPlus, MessageSquare, MessagesSquare, Plus, Settings, SunMoon, type LucideIcon } from "lucide-react";
+import { Folder, FolderPlus, Keyboard, MessageSquare, MessagesSquare, Plus, Settings, SunMoon, type LucideIcon } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -11,17 +11,19 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ChatService, type ProjectTree } from "@/lib/backend";
 import type { MessageHit } from "@bindings/harness/internal/store/models";
-import { useApp, useActiveProject } from "@/stores/app-store";
+import { useApp } from "@/stores/app-store";
+import { groupActivity, useActiveProject, useGroups } from "@/stores/group-store";
+import { shortcutLabel } from "@/lib/shortcuts";
 import { useLayout } from "@/stores/layout-store";
 import { useTheme } from "@/stores/theme-store";
 
 const DEBOUNCE_MS = 150;
 
-type Action = { id: string; label: string; icon: LucideIcon; run: () => void };
+type Action = { id: string; label: string; icon: LucideIcon; keys?: string; run: () => void };
 
 const matches = (text: string, q: string) => text.toLowerCase().includes(q);
 
-/** Ctrl/Cmd+K palette: searches workspaces, sessions, message text and actions. */
+/** Ctrl/Cmd+K palette: searches workspaces, chats, message text and actions. */
 export function SearchDialog() {
   const open = useLayout((s) => s.searchOpen);
   const setOpen = useLayout((s) => s.setSearchOpen);
@@ -35,7 +37,7 @@ export function SearchDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="top-[20%] translate-y-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
         <DialogTitle className="sr-only">Search</DialogTitle>
-        <DialogDescription className="sr-only">Search workspaces, sessions and messages</DialogDescription>
+        <DialogDescription className="sr-only">Search workspaces, chats and messages</DialogDescription>
         {/* Filtering is done here, so cmdk's own fuzzy filter is off. */}
         <Command shouldFilter={false} className="[&_[cmdk-group-heading]]:text-muted-foreground">
           <CommandInput value={query} onValueChange={setQuery} placeholder="Search…" />
@@ -50,8 +52,9 @@ export function SearchDialog() {
 
 function Results({ query, close }: { query: string; close: () => void }) {
   const tree = useApp((s) => s.tree);
-  const selectSession = useApp((s) => s.selectSession);
-  const toggleProject = useApp((s) => s.toggleProject);
+  const openChat = useGroups((s) => s.openChat);
+  const groups = useGroups((s) => s.groups);
+  const reveal = useGroups((s) => s.reveal);
   const actions = useActions(close);
   const hits = useMessageSearch(query);
 
@@ -61,7 +64,8 @@ function Results({ query, close }: { query: string; close: () => void }) {
   const sessionTitle = useMemo(() => new Map(sessionsOf(tree).map((s) => [s.id, s])), [tree]);
 
   const openSession = (id: string) => {
-    void selectSession(id);
+    const session = sessionTitle.get(id);
+    if (session) openChat(session);
     close();
   };
 
@@ -73,6 +77,7 @@ function Results({ query, close }: { query: string; close: () => void }) {
           {shownActions.map((a) => (
             <CommandItem key={a.id} value={`action:${a.id}`} onSelect={a.run}>
               <a.icon /> {a.label}
+              {a.keys && <span className="ml-auto text-xs text-muted-foreground">{a.keys}</span>}
             </CommandItem>
           ))}
         </CommandGroup>
@@ -84,7 +89,12 @@ function Results({ query, close }: { query: string; close: () => void }) {
               key={project.id}
               value={`ws:${project.id}`}
               onSelect={() => {
-                if (!project.expanded) void toggleProject(project.id);
+                // Show the workspace's most recent group, or start one.
+                const latest = groups
+                  .filter((w) => w.projectId === project.id)
+                  .sort((a, b) => groupActivity(b, tree) - groupActivity(a, tree))[0];
+                if (latest) reveal(latest.id);
+                else void useGroups.getState().newGroup(project.id);
                 close();
               }}
             >
@@ -96,7 +106,7 @@ function Results({ query, close }: { query: string; close: () => void }) {
         </CommandGroup>
       )}
       {sessions.length > 0 && (
-        <CommandGroup heading="Sessions">
+        <CommandGroup heading="Chats">
           {sessions.slice(0, query ? 50 : 8).map((s) => (
             <CommandItem key={s.id} value={`s:${s.id}`} onSelect={() => openSession(s.id)}>
               <MessagesSquare />
@@ -131,7 +141,7 @@ function sessionsOf(tree: ProjectTree[]) {
 
 function useActions(close: () => void): Action[] {
   const project = useActiveProject();
-  const newSession = useApp((s) => s.newSession);
+  const newGroup = useGroups((s) => s.newGroup);
   const addProject = useApp((s) => s.addProject);
   const setSettingsOpen = useLayout((s) => s.setSettingsOpen);
   const theme = useTheme((s) => s.theme);
@@ -143,10 +153,34 @@ function useActions(close: () => void): Action[] {
   };
   return [
     ...(project
-      ? [{ id: "new-session", label: `New session in ${project.name}`, icon: Plus, run: run(() => void newSession(project.id)) }]
+      ? [
+          { id: "new-window", label: "New window", icon: Plus, keys: shortcutLabel("newWindow"), run: run(() => void useGroups.getState().openWindow()) },
+          {
+            id: "new-group",
+            label: `New group in ${project.name}`,
+            icon: Plus,
+            keys: shortcutLabel("newGroup"),
+            run: run(() => void newGroup(project.id)),
+          },
+        ]
       : []),
-    { id: "open-folder", label: "Open folder", icon: FolderPlus, run: run(() => void addProject()) },
-    { id: "settings", label: "Settings", icon: Settings, run: run(() => setSettingsOpen(true)) },
+    {
+      id: "open-folder",
+      label: "Open folder",
+      icon: FolderPlus,
+      run: run(async () => {
+        const id = await addProject();
+        if (id) await newGroup(id);
+      }),
+    },
+    { id: "settings", label: "Settings", icon: Settings, keys: shortcutLabel("settings"), run: run(() => setSettingsOpen(true)) },
+    {
+      id: "shortcuts",
+      label: "Keyboard shortcuts",
+      icon: Keyboard,
+      keys: shortcutLabel("shortcuts"),
+      run: run(() => setSettingsOpen(true, "shortcuts")),
+    },
     {
       id: "theme",
       label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",

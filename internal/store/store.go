@@ -90,6 +90,8 @@ func Open(path string) (*Store, error) {
 func migrate(db *sql.DB) error {
 	for _, stmt := range []string{
 		`ALTER TABLE sessions ADD COLUMN last_status TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
@@ -162,12 +164,12 @@ func (s *Store) DeleteProject(id string) error {
 
 // ---- sessions ----
 
-const sessionCols = `id, project_id, title, provider, model, effort, mode, provider_session_id, started, last_status, created_at, updated_at`
+const sessionCols = `id, project_id, title, provider, model, effort, mode, provider_session_id, started, last_status, context_tokens, context_window, created_at, updated_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	var x Session
 	err := sc.Scan(&x.ID, &x.ProjectID, &x.Title, &x.Provider, &x.Model, &x.Effort, &x.Mode,
-		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.CreatedAt, &x.UpdatedAt)
+		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.ContextTokens, &x.ContextWindow, &x.CreatedAt, &x.UpdatedAt)
 	return x, err
 }
 
@@ -207,16 +209,16 @@ func (s *Store) LatestSession() (Session, bool) {
 
 func (s *Store) InsertSession(x *Session) error {
 	x.CreatedAt, x.UpdatedAt = now(), now()
-	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.CreatedAt, x.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.CreatedAt, x.UpdatedAt)
 	return err
 }
 
 func (s *Store) UpdateSession(x *Session) error {
 	x.UpdatedAt = now()
 	_, err := s.db.Exec(`UPDATE sessions SET title = ?, provider = ?, model = ?, effort = ?, mode = ?,
-		provider_session_id = ?, started = ?, last_status = ?, updated_at = ? WHERE id = ?`,
-		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.UpdatedAt, x.ID)
+		provider_session_id = ?, started = ?, last_status = ?, context_tokens = ?, context_window = ?, updated_at = ? WHERE id = ?`,
+		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.UpdatedAt, x.ID)
 	return err
 }
 

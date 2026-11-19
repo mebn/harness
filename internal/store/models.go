@@ -25,8 +25,12 @@ type Session struct {
 	// LastStatus is the outcome of the latest turn: "done" | "waiting" | "error" | "".
 	LastStatus string `json:"lastStatus"`
 	Started    bool   `json:"started"`
-	CreatedAt  int64  `json:"createdAt"`
-	UpdatedAt  int64  `json:"updatedAt"`
+	// ContextTokens is how much of the model's context the latest turn used (0 if unknown).
+	ContextTokens int64 `json:"contextTokens"`
+	// ContextWindow is the model's context size as last reported (0 if unknown).
+	ContextWindow int64 `json:"contextWindow"`
+	CreatedAt     int64 `json:"createdAt"`
+	UpdatedAt     int64 `json:"updatedAt"`
 }
 
 // ProjectTree is a project with its sessions, used to render the sidebar.

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -170,13 +171,14 @@ func (c *ChatService) run(ctx context.Context, sess store.Session, prov provider
 	if err != nil {
 		t.apply(provider.Event{Kind: provider.EventError, Text: err.Error()})
 		c.flush(t, true)
-		c.finishSession(sess.ID, req.SessionID, StatusError, false)
+		c.finishSession(sess.ID, req.SessionID, StatusError, false, 0, 0)
 		return
 	}
 
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 	gotOutput := false
+	var ctxTokens, ctxWindow int64
 loop:
 	for {
 		select {
@@ -186,6 +188,11 @@ loop:
 			}
 			if e.Kind == provider.EventUsage {
 				c.usage.record(*e.Usage)
+				continue
+			}
+			if e.Kind == provider.EventContext {
+				ctxTokens = cmp.Or(e.ContextTokens, ctxTokens)
+				ctxWindow = cmp.Or(e.ContextWindow, ctxWindow)
 				continue
 			}
 			gotOutput = gotOutput || e.Kind != provider.EventError
@@ -200,7 +207,7 @@ loop:
 	t.finish()
 	c.flush(t, true)
 
-	c.finishSession(sess.ID, req.SessionID, t.outcome(ctx.Err() != nil), gotOutput)
+	c.finishSession(sess.ID, req.SessionID, t.outcome(ctx.Err() != nil), gotOutput, ctxTokens, ctxWindow)
 	if sess.Provider == "copilot" {
 		go c.usage.refreshCopilot()
 	}
@@ -208,12 +215,15 @@ loop:
 
 // finishSession records the turn outcome (and bumps updated_at for "time ago").
 // Once the provider produced output its session exists, so later turns resume it.
-func (c *ChatService) finishSession(id, providerSessionID, status string, gotOutput bool) {
+// Context usage is kept from earlier turns when this one did not report it.
+func (c *ChatService) finishSession(id, providerSessionID, status string, gotOutput bool, ctxTokens, ctxWindow int64) {
 	fresh, err := c.store.Session(id)
 	if err != nil {
 		return
 	}
 	fresh.LastStatus = status
+	fresh.ContextTokens = cmp.Or(ctxTokens, fresh.ContextTokens)
+	fresh.ContextWindow = cmp.Or(ctxWindow, fresh.ContextWindow)
 	if gotOutput && fresh.ProviderSessionID == providerSessionID {
 		fresh.Started = true
 	}

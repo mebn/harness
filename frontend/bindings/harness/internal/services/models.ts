@@ -41,6 +41,11 @@ export interface FileEntry {
 export interface SystemInfo {
     "os": string;
     "hasWsl": boolean;
+
+    /**
+     * Hostname of the machine the server runs on.
+     */
+    "hostname": string;
 }
 
 /**

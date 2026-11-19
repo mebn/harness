@@ -12,7 +12,7 @@ import { UsageIndicator } from "./usage-indicator";
 
 const MAX_HEIGHT = 240;
 
-export function Composer({ session }: { session: Session }) {
+export function Composer({ session, visible }: { session: Session; visible: boolean }) {
   const [text, setText] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -29,8 +29,10 @@ export function Composer({ session }: { session: Session }) {
   const canSend = !running && (text.trim() !== "" || attachments.items.length > 0);
   const error = sendError ?? attachments.error;
 
-  // Focus the input when switching sessions.
-  useEffect(() => ref.current?.focus(), [session.id]);
+  // Focus the input when the chat comes to the front.
+  useEffect(() => {
+    if (visible) ref.current?.focus();
+  }, [visible]);
 
   // Grow with content up to MAX_HEIGHT.
   useEffect(() => {
@@ -63,7 +65,7 @@ export function Composer({ session }: { session: Session }) {
     <div className="mx-auto w-full max-w-3xl px-4 pb-4">
       {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
       <div className="mb-1.5 flex justify-end px-1">
-        <UsageIndicator />
+        <UsageIndicator session={session} />
       </div>
       <div
         onDragOver={(e) => {

@@ -92,3 +92,18 @@ func TestClaudeInputAttachments(t *testing.T) {
 		t.Fatalf("text block: %+v", c[1])
 	}
 }
+
+func TestParseClaudeContext(t *testing.T) {
+	ev := collect(parseClaudeLine,
+		`{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":5},"content":[]}}`,
+		// A subagent's usage is not the main conversation's.
+		`{"type":"assistant","parent_tool_use_id":"t1","message":{"usage":{"input_tokens":99999},"content":[]}}`,
+		`{"type":"result","modelUsage":{"claude-haiku":{"contextWindow":200000},"claude-opus":{"contextWindow":1000000}}}`,
+	)
+	if len(ev) != 2 || ev[0].Kind != EventContext || ev[1].Kind != EventContext {
+		t.Fatalf("unexpected events: %+v", ev)
+	}
+	if ev[0].ContextTokens != 1215 || ev[1].ContextWindow != 1000000 {
+		t.Fatalf("got tokens %d window %d", ev[0].ContextTokens, ev[1].ContextWindow)
+	}
+}

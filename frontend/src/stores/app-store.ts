@@ -13,7 +13,6 @@ import {
 import { storage } from "@/lib/storage";
 import type { AttachmentInput } from "@bindings/harness/internal/services/models";
 
-const ACTIVE_KEY = "harness.activeSession";
 const SEEN_KEY = "harness.seen";
 
 function loadSeen(): Record<string, number> {
@@ -31,7 +30,6 @@ type AppState = {
   system: SystemInfo;
   providers: ProviderInfo[];
   tree: ProjectTree[];
-  activeSessionId: string | null;
   messages: Record<string, Message[]>;
   running: Record<string, boolean>;
   /** When each session was last viewed; newer activity shows as unseen in the sidebar. */
@@ -40,15 +38,17 @@ type AppState = {
   init: () => Promise<void>;
   refreshTree: () => Promise<void>;
 
-  addProject: () => Promise<void>;
+  /** Asks for a folder and adds it; returns the new project's id. */
+  addProject: () => Promise<string | undefined>;
   removeProject: (id: string) => Promise<void>;
   renameProject: (id: string, name: string) => Promise<void>;
   toggleProject: (id: string) => Promise<void>;
 
-  newSession: (projectId: string) => Promise<void>;
+  newSession: (projectId: string) => Promise<Session>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
-  selectSession: (id: string | null) => Promise<void>;
+  /** Fetches a session's messages the first time a chat shows it. */
+  loadMessages: (id: string) => Promise<void>;
   updateSettings: (id: string, patch: Partial<SessionSettings>) => Promise<void>;
 
   send: (sessionId: string, prompt: string, attachments?: AttachmentInput[]) => Promise<void>;
@@ -70,10 +70,9 @@ function mapSession(tree: ProjectTree[], id: string, fn: (s: Session) => Session
 
 export const useApp = create<AppState>((set, get) => ({
   ready: false,
-  system: { os: "", hasWsl: false },
+  system: { os: "", hasWsl: false, hostname: "" },
   providers: [],
   tree: [],
-  activeSessionId: null,
   messages: {},
   running: {},
   seen: loadSeen(),
@@ -97,12 +96,8 @@ export const useApp = create<AppState>((set, get) => ({
     for (const s of (tree ?? []).flatMap((n) => n.sessions ?? [])) seen[s.id] ??= s.updatedAt;
     set({ seen });
     storage.set(SEEN_KEY, JSON.stringify(seen));
-    // Restore the last active session, else open the most recently used one.
-    const all = (tree ?? []).flatMap((n) => n.sessions ?? []);
-    const saved = all.find((s) => s.id === storage.get(ACTIVE_KEY));
-    const latest = [...all].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    const initial = saved ?? latest;
-    if (initial) await get().selectSession(initial.id);
+    // Reloaded chats are fetched again by the chat views that show them.
+    set({ messages: {} });
   },
 
   refreshTree: async () => set({ tree: (await ProjectService.Tree()) ?? [] }),
@@ -115,15 +110,13 @@ export const useApp = create<AppState>((set, get) => ({
       CanChooseFiles: false,
       CanCreateDirectories: true,
     });
-    if (!path) return;
+    if (!path) return undefined;
     const project = await ProjectService.AddProject(path);
     await get().refreshTree();
-    await get().newSession(project.id);
+    return project.id;
   },
 
   removeProject: async (id) => {
-    const node = get().tree.find((n) => n.project.id === id);
-    if (node?.sessions?.some((s) => s.id === get().activeSessionId)) await get().selectSession(null);
     await ProjectService.RemoveProject(id);
     await get().refreshTree();
   },
@@ -147,11 +140,12 @@ export const useApp = create<AppState>((set, get) => ({
   newSession: async (projectId) => {
     const session = await ProjectService.CreateSession(projectId);
     await get().refreshTree();
-    await get().selectSession(session.id);
+    // A new chat is known to be empty; no need to fetch.
+    set({ messages: { ...get().messages, [session.id]: [] } });
+    return session;
   },
 
   deleteSession: async (id) => {
-    if (get().activeSessionId === id) await get().selectSession(null);
     await ProjectService.DeleteSession(id);
     await get().refreshTree();
   },
@@ -162,15 +156,10 @@ export const useApp = create<AppState>((set, get) => ({
     get().markSeen(id);
   },
 
-  selectSession: async (id) => {
-    set({ activeSessionId: id });
-    if (id) get().markSeen(id);
-    if (id) storage.set(ACTIVE_KEY, id);
-    else storage.remove(ACTIVE_KEY);
-    if (id && !get().messages[id]) {
-      const list = (await ChatService.Messages(id)) ?? [];
-      set({ messages: { ...get().messages, [id]: list } });
-    }
+  loadMessages: async (id) => {
+    if (get().messages[id]) return;
+    const list = (await ChatService.Messages(id)) ?? [];
+    set({ messages: { ...get().messages, [id]: list } });
   },
 
   updateSettings: async (id, patch) => {
@@ -210,11 +199,8 @@ export const useApp = create<AppState>((set, get) => ({
 
   onStatus: (sessionId, running) => set({ running: { ...get().running, [sessionId]: running } }),
 
-  onSession: (s) => {
-    set({ tree: mapSession(get().tree, s.id, () => s) });
-    // Activity in the session you are looking at is seen immediately.
-    if (s.id === get().activeSessionId) get().markSeen(s.id);
-  },
+  // Chats that are on screen mark their own activity as seen.
+  onSession: (s) => set({ tree: mapSession(get().tree, s.id, () => s) }),
 }));
 
 export function findSession(tree: ProjectTree[], id: string | null): Session | undefined {
@@ -226,13 +212,6 @@ export function findSession(tree: ProjectTree[], id: string | null): Session | u
   return undefined;
 }
 
-export function useActiveSession() {
-  return useApp((s) => findSession(s.tree, s.activeSessionId));
-}
-
-export function useActiveProject() {
-  return useApp((s) => {
-    const session = findSession(s.tree, s.activeSessionId);
-    return session ? s.tree.find((n) => n.project.id === session.projectId)?.project : undefined;
-  });
+export function useSession(id: string | undefined) {
+  return useApp((s) => (id ? findSession(s.tree, id) : undefined));
 }

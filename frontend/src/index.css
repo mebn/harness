@@ -26,9 +26,17 @@
   --ring: oklch(0.708 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  /* The sidebar sits on the backdrop, so its highlights are translucent. */
+  --sidebar-accent: oklch(1 0 0 / 55%);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0 0 0 / 8%);
+
+  /* A neutral wash over the OS blur, so all color comes from what is behind the window. */
+  --backdrop: oklch(0.98 0 0 / 50%);
+  --pane: oklch(1 0 0 / 80%);
+  --pane-focused: oklch(1 0 0 / 96%);
+  --pane-border: oklch(1 0 0 / 70%);
+  --pane-shadow: 0 1px 2px oklch(0 0 0 / 6%), 0 6px 24px -6px oklch(0 0 0 / 12%);
 }
 
 .dark {
@@ -52,9 +60,15 @@
   --ring: oklch(0.5 0 0);
   --sidebar: oklch(0.16 0 0);
   --sidebar-foreground: oklch(0.9 0 0);
-  --sidebar-accent: oklch(0.23 0 0);
+  --sidebar-accent: oklch(1 0 0 / 7%);
   --sidebar-accent-foreground: oklch(0.95 0 0);
   --sidebar-border: oklch(1 0 0 / 7%);
+
+  --backdrop: oklch(0.16 0 0 / 60%);
+  --pane: oklch(0.2 0 0 / 80%);
+  --pane-focused: oklch(0.205 0 0 / 96%);
+  --pane-border: oklch(1 0 0 / 8%);
+  --pane-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 8px 28px -8px oklch(0 0 0 / 50%);
 }
 
 @theme inline {
@@ -98,8 +112,9 @@
   #root {
     @apply h-full overflow-hidden;
   }
+  /* Transparent so the OS-blurred desktop shows through; .app-backdrop adds the tint. */
   body {
-    @apply bg-background text-foreground text-sm antialiased select-none;
+    @apply bg-transparent text-foreground text-sm antialiased select-none;
   }
   ::-webkit-scrollbar {
     width: 8px;
@@ -111,6 +126,47 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+}
+
+/* Backdrop behind the sidebar and window cards: a neutral wash over the OS blur. */
+.app-backdrop {
+  background: var(--backdrop);
+}
+
+/* Windows and tab contents glide to their new place when the layout changes. */
+.layout-anim {
+  transition:
+    left 180ms cubic-bezier(0.2, 0, 0, 1),
+    top 180ms cubic-bezier(0.2, 0, 0, 1),
+    width 180ms cubic-bezier(0.2, 0, 0, 1),
+    height 180ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 150ms,
+    background-color 150ms;
+}
+/* Off while resizing by hand (it would lag behind the pointer) and before the first layout. */
+.no-anim .layout-anim {
+  transition: none;
+}
+
+/* A floating window card; the focused one is nearly opaque, the rest let the backdrop through. */
+.pane-card {
+  border-radius: 14px;
+  border: 1px solid var(--pane-border);
+  background: var(--pane);
+  box-shadow: var(--pane-shadow);
+  backdrop-filter: blur(24px) saturate(1.4);
+  /* Contents never spill out, even when the app window is shrunk below the windows' minimum. */
+  overflow: hidden;
+}
+.pane-card-focused {
+  background: var(--pane-focused);
+}
+
+/* Terminals are transparent so the card shows through (xterm paints its own black otherwise). */
+.terminal-host .xterm,
+.terminal-host .xterm-viewport,
+.terminal-host .xterm-screen {
+  background-color: transparent !important;
 }
 
 /* Markdown content in chat messages */

@@ -68,7 +68,8 @@ const (
 	EventToolStart
 	EventToolEnd
 	EventError
-	EventUsage // plan usage limits reported by the provider
+	EventUsage   // plan usage limits reported by the provider
+	EventContext // context window usage of the conversation so far
 )
 
 // Event is a normalized streaming event from a provider.
@@ -81,6 +82,9 @@ type Event struct {
 	ToolOutput string
 	IsError    bool
 	Usage      *usage.Snapshot // set for EventUsage
+	// EventContext: tokens currently in context, and the model's window (0 = not reported).
+	ContextTokens int64
+	ContextWindow int64
 }
 
 // Provider runs one turn and streams events until the channel closes.

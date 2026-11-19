@@ -78,8 +78,14 @@ func main() {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		BackgroundColour: application.NewRGB(255, 255, 255),
-		URL:              "/",
+		// The window is see-through: the OS blurs whatever is behind it (Acrylic on Windows,
+		// vibrancy on macOS) and the UI paints only a light tint over that.
+		BackgroundType:   application.BackgroundTypeTranslucent,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		Windows: application.WindowsWindow{
+			BackdropType: application.Acrylic,
+		},
+		URL: "/",
 	})
 
 	go bridge.RelayEvents(ctx, func(name string, data any) { app.Event.Emit(name, data) })

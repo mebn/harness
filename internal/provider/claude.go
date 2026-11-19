@@ -95,7 +95,12 @@ type claudeLine struct {
 	} `json:"rate_limit_info"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
-	Event   *struct {
+	// Set on messages from subagents, whose usage is not the main conversation's.
+	ParentToolUseID *string `json:"parent_tool_use_id"`
+	ModelUsage      map[string]struct {
+		ContextWindow int64 `json:"contextWindow"`
+	} `json:"modelUsage"`
+	Event *struct {
 		Type  string `json:"type"`
 		Delta *struct {
 			Type string `json:"type"`
@@ -103,6 +108,7 @@ type claudeLine struct {
 		} `json:"delta"`
 	} `json:"event"`
 	Message *struct {
+		Usage   *claudeTokens `json:"usage"`
 		Content []struct {
 			Type      string          `json:"type"`
 			ID        string          `json:"id"`
@@ -113,6 +119,13 @@ type claudeLine struct {
 			IsError   bool            `json:"is_error"`
 		} `json:"content"`
 	} `json:"message"`
+}
+
+type claudeTokens struct {
+	InputTokens              int64 `json:"input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
 }
 
 func parseClaudeLine(line []byte, emit func(Event)) {
@@ -129,6 +142,12 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 	case "assistant":
 		if l.Message == nil {
 			return
+		}
+		// Each request's prompt is the whole conversation so far, so it is what fills the context.
+		if u := l.Message.Usage; u != nil && l.ParentToolUseID == nil {
+			if n := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens + u.OutputTokens; n > 0 {
+				emit(Event{Kind: EventContext, ContextTokens: n})
+			}
 		}
 		for _, c := range l.Message.Content {
 			if c.Type == "tool_use" {
@@ -151,6 +170,14 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 	case "result":
 		if l.IsError && l.Result != "" {
 			emit(Event{Kind: EventError, Text: l.Result})
+		}
+		// The largest window among the models used (the main model; helpers are smaller).
+		var window int64
+		for _, m := range l.ModelUsage {
+			window = max(window, m.ContextWindow)
+		}
+		if window > 0 {
+			emit(Event{Kind: EventContext, ContextWindow: window})
 		}
 	}
 }
