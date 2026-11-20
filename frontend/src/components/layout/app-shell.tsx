@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { FolderPlus, PanelLeft, Plus } from "lucide-react";
-import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { IconButton } from "@/components/common/icon-button";
 import { ProjectSidebar } from "@/components/sidebar/project-sidebar";
 import { Button } from "@/components/ui/button";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { GroupView } from "@/components/workspace/group-view";
 import { TabLayer } from "@/components/workspace/tab-layer";
 import { useGroupTitle } from "@/components/workspace/tab-meta";
@@ -22,57 +20,89 @@ import {
   useMacTitleBar,
 } from "./window-controls";
 
-// Pane sizes are saved after user drags; open/closed state is persisted by the stores.
-const layoutStorage = { getItem: storage.get, setItem: storage.set };
+const WIDTH_KEY = "harness.sidebarWidth";
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 480;
+/** Dragging the sidebar narrower than this closes it. */
+const CLOSE_WIDTH = 120;
 
-/** Keeps a collapsible panel in sync with an open/closed flag (both directions). */
-function useCollapsible(open: boolean, setOpen: (open: boolean) => void) {
-  const ref = usePanelRef();
-  useEffect(() => {
-    const p = ref.current;
-    if (!p) return;
-    if (open && p.isCollapsed()) p.expand();
-    if (!open && !p.isCollapsed()) p.collapse();
-  }, [open, ref]);
-  const onResize = () => {
-    const collapsed = ref.current?.isCollapsed() ?? false;
-    if (collapsed === open) setOpen(!collapsed);
+const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w));
+
+/**
+ * The sidebar's width: saved after a drag, and animated when it opens or closes. Windows are
+ * laid out in percentages of their area, so they follow the slide without lagging.
+ */
+function useSidebar() {
+  const open = useLayout((s) => s.sidebarOpen);
+  const setOpen = useLayout((s) => s.setSidebarOpen);
+  const [width, setWidth] = useState(() => clampWidth(Number(storage.get(WIDTH_KEY)) || 260));
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = open ? width : 0;
+    let latest = width;
+    setDragging(true);
+    const move = (ev: PointerEvent) => {
+      const w = startWidth + ev.clientX - startX;
+      if (w < CLOSE_WIDTH) {
+        if (useLayout.getState().sidebarOpen) setOpen(false);
+        return;
+      }
+      if (!useLayout.getState().sidebarOpen) setOpen(true);
+      latest = clampWidth(w);
+      setWidth(latest);
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      setDragging(false);
+      storage.set(WIDTH_KEY, String(latest));
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
   };
-  return { panelRef: ref, onResize };
+
+  return { open, width, dragging, onPointerDown };
 }
 
 /** Workspaces and groups on the left; the active group's windows floating on the backdrop. */
 export function AppShell() {
-  const sidebar = useCollapsible(
-    useLayout((s) => s.sidebarOpen),
-    useLayout((s) => s.setSidebarOpen),
-  );
-  const layout = useDefaultLayout({
-    id: "harness.shell",
-    storage: layoutStorage,
-    onlySaveAfterUserInteractions: true,
-  });
+  const sidebar = useSidebar();
 
   // Keep group layouts in step with the backend's projects and sessions.
   const tree = useApp((s) => s.tree);
   useEffect(() => useGroups.getState().sync(tree), [tree]);
 
   return (
-    <div className="app-backdrop h-full">
-      <ResizablePanelGroup orientation="horizontal" className="h-full" {...layout}>
-        <ResizablePanel id="sidebar" defaultSize={260} minSize={200} collapsible collapsedSize={0} {...sidebar}>
+    <div className="app-backdrop flex h-full">
+      {/* The sidebar keeps its width while it slides shut, so its contents don't reflow. */}
+      <div
+        className={cn("relative h-full shrink-0 overflow-hidden", !sidebar.dragging && "sidebar-anim")}
+        style={{ width: sidebar.open ? sidebar.width : 0 }}
+        inert={!sidebar.open}
+      >
+        <div className="h-full" style={{ width: sidebar.width }}>
           <ProjectSidebar />
-        </ResizablePanel>
-        <ResizableHandle className="bg-transparent" />
-        <ResizablePanel id="main" minSize={320}>
-          <div className="flex h-full flex-col">
-            <TopBar />
-            <div className="min-h-0 flex-1 overflow-hidden pr-2 pb-2 pl-1">
-              <GroupStack />
-            </div>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </div>
+      </div>
+      <div
+        onPointerDown={sidebar.onPointerDown}
+        className="relative z-10 -mx-1 h-full w-2 shrink-0 cursor-col-resize"
+        style={noDragStyle}
+      />
+      <div className="flex h-full min-w-[320px] flex-1 flex-col">
+        <TopBar />
+        <div className="min-h-0 flex-1 overflow-hidden border-t border-l border-(--pane-border)">
+          <GroupStack />
+        </div>
+      </div>
     </div>
   );
 }

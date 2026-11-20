@@ -35,8 +35,7 @@
   --backdrop: oklch(0.98 0 0 / 50%);
   --pane: oklch(1 0 0 / 80%);
   --pane-focused: oklch(1 0 0 / 96%);
-  --pane-border: oklch(1 0 0 / 70%);
-  --pane-shadow: 0 1px 2px oklch(0 0 0 / 6%), 0 6px 24px -6px oklch(0 0 0 / 12%);
+  --pane-border: oklch(0 0 0 / 12%);
 }
 
 .dark {
@@ -67,8 +66,7 @@
   --backdrop: oklch(0.16 0 0 / 60%);
   --pane: oklch(0.2 0 0 / 80%);
   --pane-focused: oklch(0.205 0 0 / 96%);
-  --pane-border: oklch(1 0 0 / 8%);
-  --pane-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 8px 28px -8px oklch(0 0 0 / 50%);
+  --pane-border: oklch(1 0 0 / 12%);
 }
 
 @theme inline {
@@ -148,12 +146,16 @@
   transition: none;
 }
 
-/* A floating window card; the focused one is nearly opaque, the rest let the backdrop through. */
+/*
+ * A window card; the focused one is nearly opaque, the rest let the backdrop through. Windows
+ * sit edge to edge, so each draws only its right and bottom border and the group area draws
+ * the top and left: every seam is one line.
+ */
 .pane-card {
-  border-radius: 14px;
-  border: 1px solid var(--pane-border);
+  border-color: var(--pane-border);
+  border-style: solid;
+  border-width: 0 1px 1px 0;
   background: var(--pane);
-  box-shadow: var(--pane-shadow);
   backdrop-filter: blur(24px) saturate(1.4);
   /* Contents never spill out, even when the app window is shrunk below the windows' minimum. */
   overflow: hidden;
@@ -229,4 +231,9 @@
   counter-increment: line;
   content: counter(line);
   @apply mr-4 inline-block w-10 text-right text-muted-foreground/50 select-none;
+}
+
+/* The sidebar sliding open or shut. */
+.sidebar-anim {
+  transition: width 200ms cubic-bezier(0.2, 0, 0, 1);
 }

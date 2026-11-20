@@ -161,7 +161,7 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
       const pane = paneOfTabId.get(tab.id);
       const rect = pane && rects[pane.id];
       if (!pane || !rect) continue;
-      placements[tab.id] = { paneId: pane.id, style: bodyRect(rect), shown: pane.active === tab.id && !hiddenPane(pane.id) };
+      placements[tab.id] = { paneId: pane.id, style: bodyRect(rect, size), shown: pane.active === tab.id && !hiddenPane(pane.id) };
     }
     report(group.id, placements, !resizing);
   });
@@ -170,13 +170,13 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
     <GroupCtx.Provider value={ctx}>
       <div ref={container} className={cn("relative h-full overflow-hidden", (resizing || size.width === 0) && "no-anim")}>
         {panes.map((pane) => (
-          <PaneFrame key={pane.id} pane={pane} rect={rects[pane.id]} hidden={hiddenPane(pane.id)} />
+          <PaneFrame key={pane.id} pane={pane} rect={rects[pane.id]} size={size} hidden={hiddenPane(pane.id)} />
         ))}
 
         {!drag &&
           !maximized &&
           layout.gutters.map((g) => (
-            <Gutter key={`${g.splitId}:${g.index}`} info={g} root={group.root} onResizing={setResizing} />
+            <Gutter key={`${g.splitId}:${g.index}`} info={g} size={size} root={group.root} onResizing={setResizing} />
           ))}
 
       </div>
@@ -192,13 +192,29 @@ function previewRoot(root: LayoutNode, drag: Drag | null): LayoutNode {
   return extractPayload(root, drag.payload).root;
 }
 
-function bodyRect(r: Rect): React.CSSProperties {
+/**
+ * A rect as CSS relative to the group area (percentages, with fixed pixel insets), so when the
+ * area resizes (the sidebar sliding, the app window resizing) the browser moves everything in
+ * the same frame, instead of the layout catching up a frame or two later from JS.
+ */
+type Size = { width: number; height: number };
+
+function relRect(r: Rect, size: Size, inset = { left: 0, right: 0, top: 0, bottom: 0 }): React.CSSProperties {
+  // Before the area is measured, plain pixels.
+  const pos = (v: number, total: number, add: number) => (total ? `calc(${(v / total) * 100}% + ${add}px)` : `${v + add}px`);
+  const len = (v: number, total: number, sub: number) =>
+    total ? `max(0px, calc(${(v / total) * 100}% - ${sub}px))` : `${Math.max(0, v - sub)}px`;
   return {
-    left: r.left + BORDER,
-    top: r.top + BORDER + HEADER,
-    width: Math.max(0, r.width - 2 * BORDER),
-    height: Math.max(0, r.height - HEADER - 2 * BORDER),
+    left: pos(r.left, size.width, inset.left),
+    top: pos(r.top, size.height, inset.top),
+    width: len(r.width, size.width, inset.left + inset.right),
+    height: len(r.height, size.height, inset.top + inset.bottom),
   };
+}
+
+function bodyRect(r: Rect, size: Size): React.CSSProperties {
+  // Cards have only right and bottom borders (see .pane-card).
+  return relRect(r, size, { left: 0, right: BORDER, top: HEADER, bottom: BORDER });
 }
 
 /** Snapshot of where windows and tab buttons are on screen when a drag starts. */
@@ -213,7 +229,7 @@ function freeze(container: HTMLElement | null, rects: Record<string, Rect>): Fro
       return { index: Number(el.dataset.tabIndex), rect: { left: t.left, top: t.top, width: t.width, height: t.height } };
     }),
   }));
-  return { panes, headerHeight: HEADER + BORDER };
+  return { panes, headerHeight: HEADER };
 }
 
 /** Where the pointer would drop: a sidebar row, the sidebar, or a spot in the source group. */
@@ -261,13 +277,18 @@ function findSplit(node: LayoutNode, id: string): SplitNode | undefined {
   return undefined;
 }
 
+/** Minimum grab size of a gutter, in pixels. */
+const GRIP = 6;
+
 /** The gap between two windows; dragging it resizes them. */
 function Gutter({
   info,
+  size,
   root,
   onResizing,
 }: {
   info: ReturnType<typeof computeLayout>["gutters"][number];
+  size: Size;
   root: LayoutNode;
   onResizing: (resizing: boolean) => void;
 }) {
@@ -311,7 +332,14 @@ function Gutter({
     <div
       onPointerDown={onPointerDown}
       className={cn("group/gutter absolute z-10", row ? "cursor-col-resize" : "cursor-row-resize")}
-      style={info.rect}
+      // The seam may be thinner than a comfortable grab area, so pad it out around its centre.
+      style={(() => {
+        const r = info.rect;
+        const rel = relRect(r, size);
+        return row
+          ? { ...rel, left: `calc(${rel.left} + ${r.width / 2 - GRIP / 2}px)`, width: Math.max(r.width, GRIP) }
+          : { ...rel, top: `calc(${rel.top} + ${r.height / 2 - GRIP / 2}px)`, height: Math.max(r.height, GRIP) };
+      })()}
     >
       <span
         className={cn(
@@ -324,7 +352,7 @@ function Gutter({
 }
 
 /** A window's card: header with its tabs and actions; the body is covered by the active tab. */
-function PaneFrame({ pane, rect, hidden }: { pane: PaneNode; rect: Rect | undefined; hidden: boolean }) {
+function PaneFrame({ pane, rect, size, hidden }: { pane: PaneNode; rect: Rect | undefined; size: Size; hidden: boolean }) {
   const { group, dragging } = useGroupCtx();
   const setHovered = useTabLayer((st) => st.setHovered);
   const focused = group.focused === pane.id;
@@ -343,7 +371,7 @@ function PaneFrame({ pane, rect, hidden }: { pane: PaneNode; rect: Rect | undefi
         hidden && "pointer-events-none opacity-0",
         isDragged && "opacity-60",
       )}
-      style={rect}
+      style={relRect(rect, size)}
     >
       <PaneHeader pane={pane} />
       <div className="relative min-h-0 flex-1 overflow-hidden">

@@ -134,7 +134,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
 
   { id: "search", section: "App", label: "Search", combos: [key("KeyK", { mod: true })] },
-  { id: "toggleSidebar", section: "App", label: "Toggle sidebar", combos: [letter("KeyB")] },
+  { id: "toggleSidebar", section: "App", label: "Toggle sidebar", combos: [isMac ? { meta: true, code: "KeyB" } : { ctrl: true, code: "KeyB" }] },
   { id: "settings", section: "App", label: "Settings", combos: [key("Comma", { mod: true })] },
   { id: "shortcuts", section: "App", label: "Keyboard shortcuts", combos: [{ code: "F1" }] },
 ];

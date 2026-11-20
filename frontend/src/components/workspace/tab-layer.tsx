@@ -39,7 +39,7 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
               onPointerEnter={() => place && setHovered({ groupId: group.id, paneId: place.paneId })}
               onPointerLeave={() => setHovered(null)}
               className={cn(
-                "absolute overflow-hidden rounded-b-[13px]",
+                "absolute overflow-hidden",
                 animate[group.id] !== false && "layout-anim",
                 !shown && "pointer-events-none invisible",
               )}

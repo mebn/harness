@@ -41,7 +41,7 @@ const LEGACY_KEY = "harness.windows";
 const LEGACY_ACTIVE_KEY = "harness.activeSession";
 const SAVE_DELAY_MS = 250;
 /** Space between windows. */
-export const GAP = 8;
+export const GAP = 0;
 /** Smallest a window may get: new windows and splits that would go below this are refused. */
 export const MIN_WINDOW = { width: 160, height: 110 };
 /** Assumed group size before it has been laid out on screen. */
