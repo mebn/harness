@@ -33,7 +33,7 @@ func TestTerminalEcho(t *testing.T) {
 	svc := NewTerminalService(db, emit)
 	defer svc.ServiceShutdown()
 
-	id, err := svc.Start("", 80, 24)
+	id, err := svc.Start("", "", false, 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestTerminalFollowsWorkspaceEnv(t *testing.T) {
 			}
 		})
 		defer svc.ServiceShutdown()
-		id, err := svc.Start(projectID, 120, 30)
+		id, err := svc.Start(projectID, "", false, 120, 30)
 		if err != nil {
 			t.Fatal(err)
 		}

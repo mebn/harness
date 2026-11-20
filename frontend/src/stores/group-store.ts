@@ -30,6 +30,7 @@ import {
 } from "@/lib/layout-tree";
 import { projectLastUsed } from "@/lib/session-state";
 import { storage } from "@/lib/storage";
+import { ProjectService } from "@/lib/backend";
 import { findSession, useApp } from "./app-store";
 import { useLayout } from "./layout-store";
 import { useSettings } from "./settings-store";
@@ -59,6 +60,13 @@ export type Group = {
   focused: string | null;
   /** A window shown alone, filling the group. */
   maximized: string | null;
+  /** Windows focused before the current one, oldest first; focus returns to them on close. */
+  history?: string[];
+  /**
+   * The Claude Code worktree (.claude/worktrees/<name>) the group works in; unset = the
+   * workspace folder. New chats, terminals, files and changes all use it.
+   */
+  worktree?: string;
 };
 
 type Saved = { groups: Group[]; activeId: string | null };
@@ -78,26 +86,54 @@ function load(): Saved | null {
   }
 }
 
-/** Keeps `focused` and `maximized` pointing at windows that still exist. */
+const HISTORY_LIMIT = 20;
+
+/**
+ * Keeps `focused` and `maximized` pointing at windows that still exist. When the focused
+ * window is gone, focus goes back to the window focused before it.
+ */
 function fixFocus(g: Group): Group {
-  const focused = findPane(g.root, g.focused) ? g.focused : (panesOf(g.root)[0]?.id ?? null);
-  const maximized = findPane(g.root, g.maximized) ? g.maximized : null;
-  return focused === g.focused && maximized === g.maximized ? g : { ...g, focused, maximized };
+  const exists = (id: string | null | undefined) => !!id && !!findPane(g.root, id);
+  const history = (g.history ?? []).filter(exists);
+  let focused = g.focused;
+  if (!exists(focused)) focused = history.pop() ?? panesOf(g.root)[0]?.id ?? null;
+  const maximized = exists(g.maximized) ? g.maximized : null;
+  const same =
+    focused === g.focused && maximized === g.maximized && history.length === (g.history ?? []).length;
+  return same ? g : { ...g, focused, maximized, history };
 }
 
-function makeGroup(projectId: string, tabs: Tab[], createdAt = Date.now()): Group {
+/** Records the previously focused window when focus moves. */
+function trackFocus(before: Group, after: Group): Group {
+  if (after.focused === before.focused || !before.focused) return after;
+  const prev = before.focused;
+  const history = [...(after.history ?? []).filter((id) => id !== prev && id !== after.focused), prev];
+  return { ...after, history: history.slice(-HISTORY_LIMIT) };
+}
+
+function makeGroup(projectId: string, tabs: Tab[], createdAt = Date.now(), worktree?: string): Group {
   const pane = newPane(tabs);
-  return { id: uid("group"), projectId, createdAt, root: pane, focused: pane.id, maximized: null };
+  return { id: uid("group"), projectId, createdAt, root: pane, focused: pane.id, maximized: null, worktree: worktree || undefined };
 }
 
 /** Creates a tab; with no kind (or "new"), a placeholder showing the numbered choices. */
-async function createTab(kind: TabKind | undefined, projectId: string): Promise<Tab> {
+async function createTab(kind: TabKind | undefined, projectId: string, worktree?: string): Promise<Tab> {
   if (!kind || kind === "new") return { id: uid("tab"), kind: "new" };
+  if (kind === "terminal") {
+    const { tree, system } = useApp.getState();
+    const project = tree.find((n) => n.project.id === projectId)?.project;
+    return { id: uid("tab"), kind, admin: !!project && canElevate(project, system.os) && project.adminTerminals };
+  }
   if (kind === "chat") {
-    const session = await useApp.getState().newSession(projectId);
+    const session = await useApp.getState().newSession(projectId, worktree);
     return { id: uid("tab"), kind, sessionId: session.id };
   }
   return { id: uid("tab"), kind };
+}
+
+/** Whether terminals of a workspace can run as administrator (Windows folders only). */
+export function canElevate(project: { env: string }, os: string): boolean {
+  return os === "windows" && project.env !== "wsl";
 }
 
 /** Chats closed before anything was sent leave no history behind. */
@@ -147,7 +183,12 @@ type GroupState = {
   /** Shows a group and, if given, brings one of its tabs to the front. */
   reveal: (groupId: string, tabId?: string) => void;
   /** A new group with one window: showing a tab of `kind`, or empty (to pick 1–5). */
-  newGroup: (projectId: string, kind?: TabKind) => Promise<void>;
+  newGroup: (projectId: string, kind?: TabKind, worktree?: string) => Promise<void>;
+  /**
+   * Moves a group into a worktree (or back to the workspace folder). Its chats that haven't
+   * started move along; started ones and open terminals stay where they began.
+   */
+  setWorktree: (groupId: string, worktree: string | undefined) => Promise<void>;
   closeGroup: (groupId: string) => void;
   renameGroup: (groupId: string, title: string) => void;
   /** Opens a chat: its existing tab if any, else a new group for it. */
@@ -171,6 +212,8 @@ type GroupState = {
   toggleMaximize: (groupId: string, paneId: string) => void;
   setSizes: (groupId: string, splitId: string, sizes: number[]) => void;
   setTabUrl: (groupId: string, tabId: string, url: string) => void;
+  /** Starts a terminal tab's shell again, as administrator or not. */
+  restartTerminal: (groupId: string, tabId: string, admin: boolean) => void;
 
   /** Moves focus to the window in a direction (active group). */
   focusDirection: (dir: Direction) => void;
@@ -186,7 +229,7 @@ type GroupState = {
 
 export const useGroups = create<GroupState>((set, get) => {
   const edit = (groupId: string, fn: (g: Group) => Group) =>
-    set({ groups: get().groups.map((g) => (g.id === groupId ? fixFocus(fn(g)) : g)) });
+    set({ groups: get().groups.map((g) => (g.id === groupId ? fixFocus(trackFocus(g, fn(g))) : g)) });
 
   const viewport = (groupId: string) => get().viewports[groupId] ?? DEFAULT_VIEWPORT;
 
@@ -196,17 +239,22 @@ export const useGroups = create<GroupState>((set, get) => {
   const active = () => get().groups.find((g) => g.id === get().activeId);
   const bumpFocus = () => set({ focusNonce: get().focusNonce + 1 });
 
-  /** Places `tabs` as a new window in a group using the chosen split strategy. */
-  const placeNew = (g: Group, tabs: Tab[], paneId = uid("pane")) => {
+  /**
+   * Places `tabs` as a new window in a group using the chosen split strategy, splitting from
+   * `from` (by default the focused window).
+   */
+  const placeNew = (g: Group, tabs: Tab[], paneId = uid("pane"), from: string | null = g.focused) => {
     const { width, height } = viewport(g.id);
     return placeNewPane(g.root, newPane(tabs, paneId), {
       strategy: useSettings.getState().splitStrategy,
       width,
       height,
-      focused: g.focused,
+      focused: from,
       gap: GAP,
     });
   };
+  /** The last window of a layout: where new windows split from, whichever window has focus. */
+  const lastPane = (root: LayoutNode) => panesOf(root).at(-1)?.id ?? null;
 
   /** Nothing left after moving everything out. */
   const isEmpty = (root: LayoutNode) => tabsOf(root).length === 0;
@@ -227,7 +275,7 @@ export const useGroups = create<GroupState>((set, get) => {
       if (!get().synced && !saved) {
         groups = tree.flatMap((node) =>
           (node.sessions ?? []).map((s) =>
-            makeGroup(node.project.id, [{ id: uid("tab"), kind: "chat", sessionId: s.id }], s.updatedAt),
+            makeGroup(node.project.id, [{ id: uid("tab"), kind: "chat", sessionId: s.id }], s.updatedAt, s.worktree),
           ),
         );
         const legacy = storage.get(LEGACY_ACTIVE_KEY);
@@ -274,10 +322,23 @@ export const useGroups = create<GroupState>((set, get) => {
       if (node && !node.project.expanded) void useApp.getState().toggleProject(g.projectId);
     },
 
-    newGroup: async (projectId, kind) => {
-      const g = makeGroup(projectId, [await createTab(kind, projectId)]);
+    newGroup: async (projectId, kind, worktree) => {
+      const g = makeGroup(projectId, [await createTab(kind, projectId, worktree)], Date.now(), worktree);
       set({ groups: [...get().groups, g] });
       get().reveal(g.id);
+    },
+
+    setWorktree: async (groupId, worktree) => {
+      const g = get().groups.find((x) => x.id === groupId);
+      if (!g || (g.worktree ?? "") === (worktree ?? "")) return;
+      edit(groupId, (x) => ({ ...x, worktree: worktree || undefined }));
+      const { tree, refreshTree } = useApp.getState();
+      const moving = tabsOf(g.root)
+        .map((t) => (t.sessionId ? findSession(tree, t.sessionId) : undefined))
+        .filter((s): s is Session => !!s && !s.started);
+      if (moving.length === 0) return;
+      await Promise.allSettled(moving.map((s) => ProjectService.SetSessionWorktree(s.id, worktree ?? "")));
+      await refreshTree();
     },
 
     closeGroup: (groupId) => {
@@ -306,7 +367,7 @@ export const useGroups = create<GroupState>((set, get) => {
         const tab = tabsOf(g.root).find((t) => t.sessionId === session.id);
         if (tab) return get().reveal(g.id, tab.id);
       }
-      const g = makeGroup(session.projectId, [{ id: uid("tab"), kind: "chat", sessionId: session.id }]);
+      const g = makeGroup(session.projectId, [{ id: uid("tab"), kind: "chat", sessionId: session.id }], Date.now(), session.worktree);
       set({ groups: [...get().groups, g] });
       get().reveal(g.id);
     },
@@ -354,7 +415,7 @@ export const useGroups = create<GroupState>((set, get) => {
     addTab: async (groupId, paneId, kind) => {
       const g = get().groups.find((x) => x.id === groupId);
       if (!g) return;
-      const tab = await createTab(kind, g.projectId);
+      const tab = await createTab(kind, g.projectId, g.worktree);
       edit(groupId, (x) => {
         // The window may have closed while a chat session was being created.
         const target = findPane(x.root, paneId) ? paneId : x.focused;
@@ -375,7 +436,7 @@ export const useGroups = create<GroupState>((set, get) => {
       // The placeholder being replaced: the window's front tab if it is one, else none (empty window).
       const placeholder = pane.tabs.find((t) => t.id === pane.active && t.kind === "new");
       if (!placeholder && pane.tabs.length > 0) return;
-      const tab = await createTab(kind, g.projectId);
+      const tab = await createTab(kind, g.projectId, g.worktree);
       edit(groupId, (x) => ({
         ...x,
         root: updatePane(x.root, paneId, (p) => ({
@@ -418,11 +479,11 @@ export const useGroups = create<GroupState>((set, get) => {
         return;
       }
       // Check for room before creating anything (a chat tab makes a backend session).
-      const trial = placeNew(g, [{ id: "trial", kind: kind ?? "new" }]);
+      const trial = placeNew(g, [{ id: "trial", kind: kind ?? "new" }], undefined, lastPane(g.root));
       if (!fits(g.id, trial.root)) return noRoom();
-      const tabs = [await createTab(kind, g.projectId)];
+      const tabs = [await createTab(kind, g.projectId, g.worktree)];
       edit(g.id, (x) => {
-        const { root, focus } = placeNew(x, tabs);
+        const { root, focus } = placeNew(x, tabs, undefined, lastPane(x.root));
         return { ...x, root, focused: focus, maximized: null };
       });
       bumpFocus();
@@ -432,7 +493,7 @@ export const useGroups = create<GroupState>((set, get) => {
       const g = get().groups.find((x) => x.id === groupId);
       if (!g) return;
       if (!fits(groupId, insertBeside(g.root, paneId, newPane(), side))) return noRoom();
-      const tabs = [await createTab(kind, g.projectId)];
+      const tabs = [await createTab(kind, g.projectId, g.worktree)];
       edit(groupId, (x) => {
         if (!findPane(x.root, paneId)) return x;
         const pane = newPane(tabs);
@@ -455,6 +516,19 @@ export const useGroups = create<GroupState>((set, get) => {
           root: updatePane(g.root, pane.id, (p) => ({
             ...p,
             tabs: p.tabs.map((t) => (t.id === tabId ? { ...t, url } : t)),
+          })),
+        };
+      }),
+
+    restartTerminal: (groupId, tabId, admin) =>
+      edit(groupId, (g) => {
+        const pane = paneOfTab(g.root, tabId);
+        if (!pane) return g;
+        return {
+          ...g,
+          root: updatePane(g.root, pane.id, (p) => ({
+            ...p,
+            tabs: p.tabs.map((t) => (t.id === tabId ? { ...t, admin, restarts: (t.restarts ?? 0) + 1 } : t)),
           })),
         };
       }),
@@ -532,7 +606,7 @@ export const useGroups = create<GroupState>((set, get) => {
       if (tabs.length === 0) return;
       // Moving out a group's only content just turns it into a new group.
       if (isEmpty(root)) return;
-      const group = makeGroup(from.projectId, tabs);
+      const group = makeGroup(from.projectId, tabs, Date.now(), from.worktree);
       set({
         groups: [...get().groups.map((g) => (g.id === fromId ? fixFocus({ ...g, root, maximized: null }) : g)), group],
         activeId: group.id,

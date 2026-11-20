@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"harness/internal/gitx"
 	"harness/internal/store"
 )
 
@@ -23,18 +24,18 @@ type FileEntry struct {
 	IsDir bool   `json:"isDir"`
 }
 
-// FileService lists and reads files inside a project.
+// FileService lists and reads files inside a project, or one of its worktrees.
 type FileService struct{ store *store.Store }
 
 func NewFileService(s *store.Store) *FileService { return &FileService{store: s} }
 
-// resolve joins rel onto the project root and refuses paths that escape it.
-func (f *FileService) resolve(projectID, rel string) (string, error) {
-	proj, err := f.store.Project(projectID)
+// resolve joins rel onto the project (or worktree) folder and refuses paths that escape it.
+func (f *FileService) resolve(projectID, worktree, rel string) (string, error) {
+	loc, err := locate(f.store, projectID, worktree)
 	if err != nil {
 		return "", err
 	}
-	root := filepath.Clean(proj.Path)
+	root := filepath.Clean(loc.Dir)
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	if r, err := filepath.Rel(root, full); err != nil || strings.HasPrefix(r, "..") {
 		return "", errors.New("path outside project")
@@ -42,8 +43,8 @@ func (f *FileService) resolve(projectID, rel string) (string, error) {
 	return full, nil
 }
 
-func (f *FileService) List(projectID, rel string) ([]FileEntry, error) {
-	dir, err := f.resolve(projectID, rel)
+func (f *FileService) List(projectID, worktree, rel string) ([]FileEntry, error) {
+	dir, err := f.resolve(projectID, worktree, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,8 @@ func (f *FileService) List(projectID, rel string) ([]FileEntry, error) {
 	}
 	out := make([]FileEntry, 0, len(items))
 	for _, it := range items {
-		if hiddenEntries[it.Name()] {
+		// Worktrees are whole checkouts of their own; each is browsed from its own group.
+		if hiddenEntries[it.Name()] || filepath.ToSlash(filepath.Join(rel, it.Name())) == gitx.WorktreesDir {
 			continue
 		}
 		out = append(out, FileEntry{Name: it.Name(), Path: filepath.ToSlash(filepath.Join(rel, it.Name())), IsDir: it.IsDir()})
@@ -68,8 +70,8 @@ func (f *FileService) List(projectID, rel string) ([]FileEntry, error) {
 }
 
 // Read returns a text file's content for preview.
-func (f *FileService) Read(projectID, rel string) (string, error) {
-	full, err := f.resolve(projectID, rel)
+func (f *FileService) Read(projectID, worktree, rel string) (string, error) {
+	full, err := f.resolve(projectID, worktree, rel)
 	if err != nil {
 		return "", err
 	}

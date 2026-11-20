@@ -3,6 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message, Part } from "@/lib/backend";
 import { AttachmentView } from "./attachment-view";
+import { AgentCall, isAgentPart } from "./agent-call";
 import { ToolCall } from "./tool-call";
 
 const remarkPlugins = [remarkGfm];
@@ -39,11 +40,20 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Mes
     );
   }
 
+  // A subagent's tool calls are shown under its Agent call, not in the main flow.
+  const byParent = new Map<string, Part[]>();
+  for (const p of parts) {
+    if (p.parentId) byParent.set(p.parentId, [...(byParent.get(p.parentId) ?? []), p]);
+  }
   return (
     <div className="min-w-0">
-      {parts.map((p, i) => (
-        <PartView key={p.toolId || i} part={p} />
-      ))}
+      {parts.map((p, i) =>
+        p.parentId ? null : isAgentPart(p) ? (
+          <AgentCall key={p.toolId || i} part={p} calls={byParent.get(p.toolId ?? "") ?? []} />
+        ) : (
+          <PartView key={p.toolId || i} part={p} />
+        ),
+      )}
     </div>
   );
 });

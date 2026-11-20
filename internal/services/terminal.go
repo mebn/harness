@@ -26,16 +26,17 @@ func NewTerminalService(s *store.Store, emit Emitter) *TerminalService {
 	return &TerminalService{store: s, emit: emit, terms: map[string]pty.Pty{}}
 }
 
-// Start opens a shell in the project's folder (or home if projectID is empty).
-func (t *TerminalService) Start(projectID string, cols, rows int) (string, error) {
+// Start opens a shell in the project's folder or its worktree (or home if projectID is empty).
+// With admin (Windows only) the shell runs as administrator, after a UAC prompt.
+func (t *TerminalService) Start(projectID, worktree string, admin bool, cols, rows int) (string, error) {
 	dir, _ := os.UserHomeDir()
 	env := platform.EnvNative
 	if projectID != "" {
-		proj, err := t.store.Project(projectID)
+		loc, err := locate(t.store, projectID, worktree)
 		if err != nil {
 			return "", err
 		}
-		dir, env = proj.Path, platform.EnvForPath(proj.Path)
+		dir, env = loc.Dir, loc.Env
 	}
 
 	p, err := pty.New()
@@ -46,6 +47,17 @@ func (t *TerminalService) Start(projectID string, cols, rows int) (string, error
 		_ = p.Resize(cols, rows)
 	}
 	name, args := platform.ShellCommand(env, dir)
+	if admin {
+		if env.Normalize() != platform.EnvNative {
+			p.Close()
+			return "", errors.New("administrator terminals are only available for Windows folders")
+		}
+		var err error
+		if name, args, err = platform.AdminShellCommand(dir); err != nil {
+			p.Close()
+			return "", err
+		}
+	}
 	cmd := p.Command(name, args...)
 	if env.Normalize() == platform.EnvNative {
 		cmd.Dir = dir

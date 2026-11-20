@@ -4,6 +4,7 @@ import { InlineEdit } from "@/components/common/inline-edit";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -15,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { useDrag } from "@/stores/drag-store";
-import { groupActivity, useGroups } from "@/stores/group-store";
+import { canElevate, groupActivity, useGroups } from "@/stores/group-store";
 import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
 import { GroupItem } from "./group-item";
@@ -42,6 +43,8 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
   const dropHere = useDrag((s) => s.drag?.projectId === project.id && s.drag.target?.kind === "newGroup");
   const rename = useApp((s) => s.renameProject);
   const remove = useApp((s) => s.removeProject);
+  const setAdminTerminals = useApp((s) => s.setAdminTerminals);
+  const elevatable = useApp((s) => canElevate(project, s.system.os));
   const now = useNow();
   // The folder shows the most urgent state among its sessions.
   const state = useApp((s) => strongest(sessions.map((x) => sessionState(x, !!s.running[x.id], s.seen[x.id]))));
@@ -96,10 +99,18 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
                 <MoreHorizontal className="size-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuContent align="start" className="w-48" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onSelect={() => setEditing(true)}>
                 <Pencil /> Rename
               </DropdownMenuItem>
+              {elevatable && (
+                <DropdownMenuCheckboxItem
+                  checked={project.adminTerminals}
+                  onCheckedChange={(v) => void setAdminTerminals(project.id, v === true)}
+                >
+                  Terminals as admin
+                </DropdownMenuCheckboxItem>
+              )}
               <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
                 <Trash2 /> Remove
               </DropdownMenuItem>

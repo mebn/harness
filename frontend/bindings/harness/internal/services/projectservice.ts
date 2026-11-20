@@ -19,10 +19,11 @@ export function AddProject(path: string): $CancellablePromise<store$0.Project> {
 }
 
 /**
- * CreateSession starts a new session, inheriting settings from the last used session.
+ * CreateSession starts a new session in the project's folder or one of its worktrees,
+ * inheriting settings from the last used session.
  */
-export function CreateSession(projectID: string): $CancellablePromise<store$0.Session> {
-    return $Call.ByID(2718298474, projectID);
+export function CreateSession(projectID: string, worktree: string): $CancellablePromise<store$0.Session> {
+    return $Call.ByID(2718298474, projectID, worktree);
 }
 
 export function DeleteSession(id: string): $CancellablePromise<void> {
@@ -44,8 +45,23 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
     return $Call.ByID(2801526184, id, title);
 }
 
+/**
+ * SetAdminTerminals chooses whether new terminals in the workspace run as administrator.
+ */
+export function SetAdminTerminals(id: string, admin: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3308270914, id, admin);
+}
+
 export function SetExpanded(id: string, expanded: boolean): $CancellablePromise<void> {
     return $Call.ByID(2578190055, id, expanded);
+}
+
+/**
+ * SetSessionWorktree moves a session that hasn't started into a worktree ("" = the project's
+ * folder). A started session stays where it began: the CLI resumes sessions per folder.
+ */
+export function SetSessionWorktree(id: string, worktree: string): $CancellablePromise<store$0.Session> {
+    return $Call.ByID(3895387927, id, worktree);
 }
 
 /**

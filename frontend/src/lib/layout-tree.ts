@@ -22,6 +22,10 @@ export type Tab = {
   sessionId?: string;
   /** browser: last visited address. */
   url?: string;
+  /** terminal: runs as administrator (Windows). */
+  admin?: boolean;
+  /** terminal: bumped to restart the shell. */
+  restarts?: number;
 };
 
 export type PaneNode = { type: "pane"; id: string; tabs: Tab[]; active: string | null };

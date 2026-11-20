@@ -12,7 +12,7 @@ export {
 
 export type { SystemInfo, FileEntry } from "@bindings/harness/internal/services/models";
 export type { Message, Part, Project, ProjectTree, Session } from "@bindings/harness/internal/store/models";
-export type { File as GitFile, Status as GitStatus } from "@bindings/harness/internal/gitx/models";
+export type { File as GitFile, Status as GitStatus, Worktree } from "@bindings/harness/internal/gitx/models";
 export type { Info as ProviderInfo, Option } from "@bindings/harness/internal/provider/models";
 
 export { Dialogs, Events } from "@wailsio/runtime";

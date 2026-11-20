@@ -20,6 +20,7 @@ const DECORATIONS: Record<string, Decoration> = {
 
 type TreeContext = {
   projectId: string;
+  worktree: string;
   /** Increments on every poll so open folders re-list themselves. */
   tick: number;
   files: Map<string, Decoration>;
@@ -52,9 +53,9 @@ const TREE = "tree";
 
 type OpenTabs = { files: string[]; active: string };
 
-/** Live file tree for a project plus open files as tabs (like editor tabs). */
-export function FileExplorer({ projectId, active }: { projectId: string; active: boolean }) {
-  const { status } = useGitStatus(projectId, active);
+/** Live file tree for a project (or worktree) plus open files as tabs (like editor tabs). */
+export function FileExplorer({ projectId, worktree = "", active }: { projectId: string; worktree?: string; active: boolean }) {
+  const { status } = useGitStatus(projectId, active, worktree);
   const [tabs, setTabs] = useState<OpenTabs>({ files: [], active: TREE });
   const [tick, setTick] = useState(0);
 
@@ -92,12 +93,12 @@ export function FileExplorer({ projectId, active }: { projectId: string; active:
       />
       <div className="relative min-h-0 flex-1">
         <div className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
-          <Ctx.Provider value={{ projectId, tick, onOpen: open, ...decorations }}>
+          <Ctx.Provider value={{ projectId, worktree, tick, onOpen: open, ...decorations }}>
             <DirNode path="" depth={0} />
           </Ctx.Provider>
         </div>
         {tabs.active !== TREE && (
-          <OpenFile key={tabs.active} projectId={projectId} path={tabs.active} tick={tick} />
+          <OpenFile key={tabs.active} projectId={projectId} worktree={worktree} path={tabs.active} tick={tick} />
         )}
       </div>
     </div>
@@ -105,17 +106,17 @@ export function FileExplorer({ projectId, active }: { projectId: string; active:
 }
 
 /** An open file tab; re-reads the file on every tick so it shows the latest content. */
-function OpenFile({ projectId, path, tick }: { projectId: string; path: string; tick: number }) {
+function OpenFile({ projectId, worktree, path, tick }: { projectId: string; worktree: string; path: string; tick: number }) {
   const [content, setContent] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    FileService.Read(projectId, path)
+    FileService.Read(projectId, worktree, path)
       .then((text) => !cancelled && setContent((prev) => (prev === text ? prev : text)))
       .catch((e) => !cancelled && setContent(String(e)));
     return () => {
       cancelled = true;
     };
-  }, [projectId, path, tick]);
+  }, [projectId, worktree, path, tick]);
 
   if (content === null) return null;
   return (
@@ -125,14 +126,14 @@ function OpenFile({ projectId, path, tick }: { projectId: string; path: string; 
   );
 }
 function DirNode({ path, depth }: { path: string; depth: number }) {
-  const { projectId, tick } = useTree();
+  const { projectId, worktree, tick } = useTree();
   const [entries, setEntries] = useState<FileEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const last = useRef("");
 
   useEffect(() => {
     let cancelled = false;
-    FileService.List(projectId, path)
+    FileService.List(projectId, worktree, path)
       .then((list) => {
         const json = JSON.stringify(list);
         if (cancelled || json === last.current) return; // unchanged: no re-render
@@ -144,7 +145,7 @@ function DirNode({ path, depth }: { path: string; depth: number }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, path, tick]);
+  }, [projectId, worktree, path, tick]);
 
   if (error) return <p className="px-3 text-xs text-destructive">{error}</p>;
   if (!entries) return null;

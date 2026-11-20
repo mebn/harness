@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 
 	"harness/internal/attach"
-	"harness/internal/platform"
 	"harness/internal/provider"
 	"harness/internal/store"
 )
@@ -94,7 +93,7 @@ func (c *ChatService) Send(sessionID, prompt string, attachments []AttachmentInp
 	if err != nil {
 		return err
 	}
-	proj, err := c.store.Project(sess.ProjectID)
+	loc, err := locate(c.store, sess.ProjectID, sess.Worktree)
 	if err != nil {
 		return err
 	}
@@ -147,7 +146,7 @@ func (c *ChatService) Send(sessionID, prompt string, attachments []AttachmentInp
 	c.emit(EventChatStatus, ChatStatus{SessionID: sessionID, Running: true})
 
 	req := provider.Request{
-		Prompt: prompt, Dir: proj.Path, Env: platform.EnvForPath(proj.Path),
+		Prompt: prompt, Dir: loc.Dir, Env: loc.Env,
 		Model: sess.Model, Effort: sess.Effort, Mode: sess.Mode,
 		SessionID: sess.ProviderSessionID, Resume: sess.Started,
 		Attachments: reqAttachments,

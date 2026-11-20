@@ -28,3 +28,11 @@ export interface Status {
     "behind": number;
     "files": File[] | null;
 }
+
+/**
+ * Worktree is one of the repository's Claude Code worktrees.
+ */
+export interface Worktree {
+    "name": string;
+    "branch": string;
+}

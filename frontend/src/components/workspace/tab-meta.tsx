@@ -24,6 +24,7 @@ export function useTabLabel(tab: Tab): string {
   const title = useApp((s) => (tab.sessionId ? findSession(s.tree, tab.sessionId)?.title : undefined));
   if (tab.kind === "chat") return title || "Chat";
   if (tab.kind === "browser" && tab.url) return hostLabel(tab.url);
+  if (tab.kind === "terminal" && tab.admin) return "Terminal (Admin)";
   return KIND_META[tab.kind].label;
 }
 

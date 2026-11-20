@@ -43,8 +43,10 @@ type AppState = {
   removeProject: (id: string) => Promise<void>;
   renameProject: (id: string, name: string) => Promise<void>;
   toggleProject: (id: string) => Promise<void>;
+  /** New terminals in the workspace run as administrator (Windows). */
+  setAdminTerminals: (id: string, admin: boolean) => Promise<void>;
 
-  newSession: (projectId: string) => Promise<Session>;
+  newSession: (projectId: string, worktree?: string) => Promise<Session>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   /** Fetches a session's messages the first time a chat shows it. */
@@ -136,9 +138,16 @@ export const useApp = create<AppState>((set, get) => ({
     await ProjectService.SetExpanded(id, expanded);
   },
 
+  setAdminTerminals: async (id, admin) => {
+    set({
+      tree: get().tree.map((n) => (n.project.id === id ? { ...n, project: { ...n.project, adminTerminals: admin } } : n)),
+    });
+    await ProjectService.SetAdminTerminals(id, admin);
+  },
 
-  newSession: async (projectId) => {
-    const session = await ProjectService.CreateSession(projectId);
+
+  newSession: async (projectId, worktree) => {
+    const session = await ProjectService.CreateSession(projectId, worktree ?? "");
     await get().refreshTree();
     // A new chat is known to be empty; no need to fetch.
     set({ messages: { ...get().messages, [session.id]: [] } });

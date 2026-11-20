@@ -15,10 +15,10 @@ const STATUS_STYLE: Record<string, string> = {
   R: "text-sky-600 dark:text-sky-400",
 };
 
-/** Working-tree changes for a project, with commit and push. */
-export function GitChanges({ projectId, active }: { projectId: string; active: boolean }) {
+/** Working-tree changes for a project (or one of its worktrees), with commit and push. */
+export function GitChanges({ projectId, worktree = "", active }: { projectId: string; worktree?: string; active: boolean }) {
   const project = useApp((s) => s.tree.find((n) => n.project.id === projectId)?.project);
-  const { status, error, refresh } = useGitStatus(project?.id, active);
+  const { status, error, refresh } = useGitStatus(project?.id, active, worktree);
 
   if (!project) return <Centered>No project</Centered>;
   if (!status) return <Centered>{error ?? <Loader2 className="size-4 animate-spin" />}</Centered>;
@@ -45,16 +45,16 @@ export function GitChanges({ projectId, active }: { projectId: string; active: b
         {files.length === 0 ? (
           <Centered>No changes</Centered>
         ) : (
-          files.map((f) => <FileRow key={f.path} projectId={project.id} file={f} />)
+          files.map((f) => <FileRow key={f.path} projectId={project.id} worktree={worktree} file={f} />)
         )}
       </div>
 
-      <CommitBox projectId={project.id} status={status} onDone={refresh} />
+      <CommitBox projectId={project.id} worktree={worktree} status={status} onDone={refresh} />
     </div>
   );
 }
 
-function FileRow({ projectId, file }: { projectId: string; file: GitFile }) {
+function FileRow({ projectId, worktree, file }: { projectId: string; worktree: string; file: GitFile }) {
   const [open, setOpen] = useState(false);
   const slash = file.path.lastIndexOf("/");
   const name = file.path.slice(slash + 1);
@@ -80,7 +80,7 @@ function FileRow({ projectId, file }: { projectId: string; file: GitFile }) {
           <LineCounts added={file.added} removed={file.removed} />
         )}
       </div>
-      {open && <DiffView projectId={projectId} file={file} />}
+      {open && <DiffView projectId={projectId} worktree={worktree} file={file} />}
     </div>
   );
 }
@@ -94,13 +94,13 @@ function LineCounts({ added, removed }: { added: number; removed: number }) {
   );
 }
 
-function DiffView({ projectId, file }: { projectId: string; file: GitFile }) {
+function DiffView({ projectId, worktree, file }: { projectId: string; worktree: string; file: GitFile }) {
   const [diff, setDiff] = useState<string | null>(null);
   useEffect(() => {
-    GitService.Diff(projectId, file)
+    GitService.Diff(projectId, worktree, file)
       .then(setDiff)
       .catch((e) => setDiff(String(e)));
-  }, [projectId, file]);
+  }, [projectId, worktree, file]);
 
   if (diff === null) return null;
   // Skip the header (diff --git, index, ---/+++) and show hunks only.
@@ -125,7 +125,17 @@ function DiffView({ projectId, file }: { projectId: string; file: GitFile }) {
   );
 }
 
-function CommitBox({ projectId, status, onDone }: { projectId: string; status: GitStatus; onDone: () => Promise<void> }) {
+function CommitBox({
+  projectId,
+  worktree,
+  status,
+  onDone,
+}: {
+  projectId: string;
+  worktree: string;
+  status: GitStatus;
+  onDone: () => Promise<void>;
+}) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<"commit" | "push" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,10 +147,10 @@ function CommitBox({ projectId, status, onDone }: { projectId: string; status: G
     setError(null);
     try {
       if (kind === "commit") {
-        await GitService.Commit(projectId, message.trim());
+        await GitService.Commit(projectId, worktree, message.trim());
         setMessage("");
       } else {
-        await GitService.Push(projectId);
+        await GitService.Push(projectId, worktree);
       }
     } catch (e) {
       setError(String(e));

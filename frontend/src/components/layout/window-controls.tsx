@@ -19,6 +19,12 @@ export function useMacTitleBar() {
 export const dragStyle = { "--wails-draggable": "drag" } as React.CSSProperties;
 export const noDragStyle = { "--wails-draggable": "no-drag" } as React.CSSProperties;
 
+/** Double-clicking empty title bar space maximizes or restores the window, like a native one. */
+export function onTitleBarDoubleClick(e: React.MouseEvent) {
+  if ((e.target as HTMLElement).closest("button, a, input, textarea, [role=button], [role=menu]")) return;
+  void Window.ToggleMaximise();
+}
+
 export function WindowControls() {
   if (!useCustomTitleBar()) return null;
   return (

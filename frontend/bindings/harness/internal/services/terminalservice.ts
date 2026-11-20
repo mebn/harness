@@ -19,10 +19,11 @@ export function Resize(id: string, cols: number, rows: number): $CancellableProm
 }
 
 /**
- * Start opens a shell in the project's folder (or home if projectID is empty).
+ * Start opens a shell in the project's folder or its worktree (or home if projectID is empty).
+ * With admin (Windows only) the shell runs as administrator, after a UAC prompt.
  */
-export function Start(projectID: string, cols: number, rows: number): $CancellablePromise<string> {
-    return $Call.ByID(2690119065, projectID, cols, rows);
+export function Start(projectID: string, worktree: string, admin: boolean, cols: number, rows: number): $CancellablePromise<string> {
+    return $Call.ByID(2690119065, projectID, worktree, admin, cols, rows);
 }
 
 export function Write(id: string, data: string): $CancellablePromise<void> {

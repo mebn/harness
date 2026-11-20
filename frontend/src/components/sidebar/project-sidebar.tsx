@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Laptop, Plus, Search, Settings } from "lucide-react";
 import { projectLastUsed as lastUsed } from "@/lib/session-state";
 import { IconButton } from "@/components/common/icon-button";
-import { dragStyle, useMacTitleBar } from "@/components/layout/window-controls";
+import { dragStyle, onTitleBarDoubleClick, useMacTitleBar } from "@/components/layout/window-controls";
 import { useApp } from "@/stores/app-store";
 import { useLayout } from "@/stores/layout-store";
 import { shortcutLabel } from "@/lib/shortcuts";
@@ -29,8 +29,8 @@ export function ProjectSidebar() {
   return (
     // Dropping a dragged tab or window anywhere here makes it a new group.
     <aside data-drop-sidebar className="flex h-full flex-col text-sidebar-foreground">
-      {/* Empty strip that doubles as the window's drag region. */}
-      <div className="h-11 shrink-0" style={{ ...dragStyle, paddingLeft: isMac ? 80 : undefined }} />
+      {/* On macOS the traffic lights sit here; the strip doubles as the window's drag region. */}
+      {isMac && <div className="h-11 shrink-0" style={{ ...dragStyle, paddingLeft: 80 }} onDoubleClick={onTitleBarDoubleClick} />}
 
       <nav className="flex flex-col gap-0.5 px-2 pt-2">
         <button

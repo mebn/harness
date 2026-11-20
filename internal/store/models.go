@@ -7,6 +7,8 @@ type Project struct {
 	Path      string `json:"path"`
 	Env       string `json:"env"` // "native" | "wsl", inferred from Path
 	Expanded  bool   `json:"expanded"`
+	// AdminTerminals opens new terminals as administrator (Windows).
+	AdminTerminals bool `json:"adminTerminals"`
 	CreatedAt int64  `json:"createdAt"`
 }
 
@@ -19,6 +21,9 @@ type Session struct {
 	Model     string `json:"model"`
 	Effort    string `json:"effort"`
 	Mode      string `json:"mode"`
+	// Worktree is the Claude Code worktree the session runs in ("" = the project's own folder).
+	// It is fixed once the session has started, since the CLI keeps sessions per folder.
+	Worktree string `json:"worktree"`
 	// ProviderSessionID is the id the provider CLI uses to resume context.
 	ProviderSessionID string `json:"providerSessionId"`
 	// Started is true once the provider has created its session (resume instead of create).
@@ -49,6 +54,16 @@ type Part struct {
 	ToolOutput string `json:"toolOutput,omitempty"`
 	IsError    bool   `json:"isError,omitempty"`
 	Done       bool   `json:"done,omitempty"`
+	// ParentID is set on tool calls made by a subagent: the toolId of its Agent call.
+	ParentID string `json:"parentId,omitempty"`
+	// Subagent is an Agent call's agent type ("Explore", "general-purpose", ...).
+	Subagent string `json:"subagent,omitempty"`
+	// When a tool call started and finished (ms), to time subagents.
+	StartedAt int64 `json:"startedAt,omitempty"`
+	EndedAt   int64 `json:"endedAt,omitempty"`
+	// A finished subagent's totals, when the CLI reported them.
+	AgentToolUses int   `json:"agentToolUses,omitempty"`
+	AgentTokens   int64 `json:"agentTokens,omitempty"`
 	// Attachment fields (Type "attachment").
 	FileName string `json:"fileName,omitempty"`
 	FilePath string `json:"filePath,omitempty"`

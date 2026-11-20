@@ -3,6 +3,7 @@ package services
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"harness/internal/provider"
 	"harness/internal/store"
@@ -28,11 +29,19 @@ func (t *transcript) apply(e provider.Event) {
 			parts = append(parts, store.Part{Type: "text", Text: e.Text})
 		}
 	case provider.EventToolStart:
-		parts = append(parts, store.Part{Type: "tool", ToolID: e.ToolID, ToolName: e.ToolName, ToolInput: e.ToolInput})
+		parts = append(parts, store.Part{Type: "tool", ToolID: e.ToolID, ToolName: e.ToolName, ToolInput: e.ToolInput,
+			ParentID: e.ParentID, Subagent: e.Subagent, StartedAt: time.Now().UnixMilli()})
 	case provider.EventToolEnd:
 		for i := len(parts) - 1; i >= 0; i-- {
 			if parts[i].Type == "tool" && parts[i].ToolID == e.ToolID {
-				parts[i].ToolOutput, parts[i].IsError, parts[i].Done = e.ToolOutput, e.IsError, true
+				p := &parts[i]
+				p.ToolOutput, p.IsError, p.Done, p.EndedAt = e.ToolOutput, e.IsError, true, time.Now().UnixMilli()
+				if s := e.AgentStats; s != nil {
+					p.AgentToolUses, p.AgentTokens = s.ToolUses, s.Tokens
+					if s.DurationMs > 0 {
+						p.EndedAt = p.StartedAt + s.DurationMs
+					}
+				}
 				break
 			}
 		}
@@ -46,8 +55,13 @@ func (t *transcript) apply(e provider.Event) {
 func (t *transcript) finish() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	now := time.Now().UnixMilli()
 	for i := range t.msg.Parts {
-		t.msg.Parts[i].Done = true
+		p := &t.msg.Parts[i]
+		if p.Type == "tool" && !p.Done {
+			p.EndedAt = now
+		}
+		p.Done = true
 	}
 	t.dirty = true
 }

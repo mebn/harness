@@ -107,3 +107,26 @@ func TestParseClaudeContext(t *testing.T) {
 		t.Fatalf("got tokens %d window %d", ev[0].ContextTokens, ev[1].ContextWindow)
 	}
 }
+
+func TestParseClaudeSubagent(t *testing.T) {
+	ev := collect(parseClaudeLine,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a1","name":"Agent","input":{"description":"Find auth","prompt":"...","subagent_type":"Explore"}}]}}`,
+		// The subagent's own streamed text stays out of the main transcript.
+		`{"type":"stream_event","parent_tool_use_id":"a1","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"inner"}}}`,
+		`{"type":"assistant","parent_tool_use_id":"a1","message":{"content":[{"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"auth"}}]}}`,
+		`{"type":"user","parent_tool_use_id":"a1","message":{"content":[{"type":"tool_result","tool_use_id":"g1","content":"x.go"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":[{"type":"text","text":"report"}]}]},"tool_use_result":{"totalToolUseCount":1,"totalTokens":1234,"totalDurationMs":5000}}`,
+	)
+	if len(ev) != 4 {
+		t.Fatalf("unexpected events: %+v", ev)
+	}
+	if ev[0].Subagent != "Explore" || ev[0].ToolInput != "Find auth" || ev[0].ParentID != "" {
+		t.Fatalf("agent start: %+v", ev[0])
+	}
+	if ev[1].ToolName != "Grep" || ev[1].ParentID != "a1" {
+		t.Fatalf("subagent tool: %+v", ev[1])
+	}
+	if s := ev[3].AgentStats; s == nil || s.ToolUses != 1 || s.Tokens != 1234 || s.DurationMs != 5000 || ev[3].ToolOutput != "report" {
+		t.Fatalf("agent result: %+v", ev[3])
+	}
+}

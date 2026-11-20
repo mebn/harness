@@ -1,5 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Columns2, Maximize2, Minimize2, Plus, Rows2, X } from "lucide-react";
+import { Columns2, Maximize2, Minimize2, Plus, RotateCw, Rows2, ShieldCheck, ShieldOff, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   applyMove,
@@ -20,7 +28,8 @@ import {
 import { shortcutLabel, type ShortcutId } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useDrag, type Drag, type DragTarget, type FrozenGeometry } from "@/stores/drag-store";
-import { GAP, MIN_WINDOW, layoutFits, useGroups, type Group } from "@/stores/group-store";
+import { useApp } from "@/stores/app-store";
+import { GAP, MIN_WINDOW, canElevate, layoutFits, useGroups, type Group } from "@/stores/group-store";
 import { useTabLayer, type Placement } from "@/stores/tab-layer-store";
 import { KindPicker } from "./kind-picker";
 import { TabIcon, useTabLabel } from "./tab-meta";
@@ -441,9 +450,14 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
   const label = useTabLabel(tab);
   const store = useGroups.getState();
   const isDragged = dragging?.kind === "tab" && dragging.tabId === tab.id;
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuOpen(true);
+      }}
       role="tab"
       aria-selected={selected}
       title={label}
@@ -480,7 +494,56 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
       >
         <X className="size-3" />
       </button>
+      <TabMenu tab={tab} open={menuOpen} onOpenChange={setMenuOpen} />
     </div>
+  );
+}
+
+/** A tab's right-click menu; terminals can restart, as administrator on Windows. */
+function TabMenu({ tab, open, onOpenChange }: { tab: Tab; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { group } = useGroupCtx();
+  const elevatable = useApp((s) => {
+    const project = s.tree.find((n) => n.project.id === group.projectId)?.project;
+    return !!project && canElevate(project, s.system.os);
+  });
+  const store = useGroups.getState();
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      {/* Anchors the menu under the tab; the tab itself handles clicks and drags. */}
+      <DropdownMenuTrigger asChild>
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-0" />
+      </DropdownMenuTrigger>
+      {/* React events bubble through the portal to the tab; keep them from starting a drag. */}
+      <DropdownMenuContent
+        align="start"
+        className="w-56"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {tab.kind === "terminal" && (
+          <>
+            <DropdownMenuItem onSelect={() => store.restartTerminal(group.id, tab.id, !!tab.admin)}>
+              <RotateCw /> Restart
+            </DropdownMenuItem>
+            {elevatable &&
+              (tab.admin ? (
+                <DropdownMenuItem onSelect={() => store.restartTerminal(group.id, tab.id, false)}>
+                  <ShieldOff /> Restart without admin rights
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => store.restartTerminal(group.id, tab.id, true)}>
+                  <ShieldCheck /> Restart as administrator
+                </DropdownMenuItem>
+              ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuItem onSelect={() => store.closeTab(group.id, tab.id)}>
+          <X /> Close tab
+          <DropdownMenuShortcut>{shortcutLabel("closeTab")}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -31,7 +31,22 @@ function decode(b64: string): Uint8Array {
  * An interactive shell in a project folder. The backend picks WSL or a native shell
  * from where that folder lives. Starts on mount and lives until unmount.
  */
-export function TerminalView({ projectId, active, fontSize = 12 }: { projectId: string; active: boolean; fontSize?: number }) {
+export function TerminalView({
+  projectId,
+  worktree = "",
+  admin = false,
+  active,
+  fontSize = 12,
+}: {
+  projectId: string;
+  /** Where the shell starts; a running shell stays put if its group moves to another worktree. */
+  worktree?: string;
+  /** Runs the shell as administrator (Windows; asks via UAC). Fixed for this instance. */
+  admin?: boolean;
+  active: boolean;
+  fontSize?: number;
+}) {
+  const startIn = useRef(worktree);
   const theme = useTheme((s) => s.theme);
   const container = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -67,7 +82,8 @@ export function TerminalView({ projectId, active, fontSize = 12 }: { projectId: 
       Events.On("term:exit", (e) => e.data.id === id && term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n")),
     ];
 
-    TerminalService.Start(projectId, term.cols, term.rows)
+    if (admin) term.write("\x1b[2mStarting as administrator — confirm the Windows prompt…\x1b[0m\r\n");
+    TerminalService.Start(projectId, startIn.current, admin, term.cols, term.rows)
       .then((tid) => {
         if (disposed) return void TerminalService.Close(tid);
         id = tid;

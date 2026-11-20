@@ -81,11 +81,27 @@ type Event struct {
 	ToolInput  string
 	ToolOutput string
 	IsError    bool
+	// ParentID is set on tool calls a subagent made: the id of the Agent tool call running it.
+	ParentID string
+	// Subagent is the agent type of an Agent tool call (e.g. "Explore"); "" for other tools.
+	Subagent string
+	// Set on an Agent tool's result when the CLI reports them.
+	AgentStats *AgentStats
 	Usage      *usage.Snapshot // set for EventUsage
 	// EventContext: tokens currently in context, and the model's window (0 = not reported).
 	ContextTokens int64
 	ContextWindow int64
 }
+
+// AgentStats summarizes a finished subagent run.
+type AgentStats struct {
+	ToolUses   int
+	Tokens     int64
+	DurationMs int64
+}
+
+// IsAgentTool reports whether a tool call starts a subagent (named Task in older CLIs).
+func IsAgentTool(name string) bool { return name == "Agent" || name == "Task" }
 
 // Provider runs one turn and streams events until the channel closes.
 type Provider interface {

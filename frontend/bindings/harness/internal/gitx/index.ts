@@ -3,5 +3,6 @@
 
 export type {
     File,
-    Status
+    Status,
+    Worktree
 } from "./models.js";

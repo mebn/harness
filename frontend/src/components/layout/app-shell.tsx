@@ -5,6 +5,7 @@ import { ProjectSidebar } from "@/components/sidebar/project-sidebar";
 import { Button } from "@/components/ui/button";
 import { GroupView } from "@/components/workspace/group-view";
 import { TabLayer } from "@/components/workspace/tab-layer";
+import { WorktreePicker } from "@/components/workspace/worktree-picker";
 import { useGroupTitle } from "@/components/workspace/tab-meta";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   WINDOW_CONTROLS_WIDTH,
   dragStyle,
   noDragStyle,
+  onTitleBarDoubleClick,
   useCustomTitleBar,
   useMacTitleBar,
 } from "./window-controls";
@@ -184,6 +186,7 @@ function TopBar() {
   return (
     // Part of the window's title bar: draggable, and padded around OS/window controls.
     <header
+      onDoubleClick={onTitleBarDoubleClick}
       className="flex h-11 shrink-0 items-center gap-2 px-1"
       style={{
         ...dragStyle,
@@ -198,6 +201,7 @@ function TopBar() {
         <span className="font-medium">{title}</span>
         {project && <span className="text-muted-foreground"> · {project.name}</span>}
       </span>
+      {group && <WorktreePicker group={group} />}
     </header>
   );
 }

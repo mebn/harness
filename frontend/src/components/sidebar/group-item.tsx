@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Pencil, X } from "lucide-react";
+import { FolderGit2, MoreHorizontal, Pencil, X } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import {
   DropdownMenu,
@@ -109,6 +109,12 @@ export function GroupItem({ group }: { group: Group }) {
           />
         ) : (
           <span className={cn("flex-1 truncate", STATE_TEXT[state])}>{title}</span>
+        )}
+        {group.worktree && !editing && (
+          <span title={`Worktree: ${group.worktree}`} className="flex max-w-24 shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
+            <FolderGit2 className="size-3 shrink-0" />
+            <span className="truncate">{group.worktree}</span>
+          </span>
         )}
         {tabs.length > 1 && number === 0 && (
           <span

@@ -51,6 +51,7 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
                   tab={tab}
                   groupId={group.id}
                   projectId={group.projectId}
+                  worktree={group.worktree ?? ""}
                   paneId={place?.paneId}
                   visible={shown}
                   focused={shown && group.focused === place?.paneId}
@@ -69,6 +70,7 @@ const TabContent = memo(function TabContent({
   tab,
   groupId,
   projectId,
+  worktree,
   paneId,
   visible,
   focused,
@@ -77,6 +79,7 @@ const TabContent = memo(function TabContent({
   tab: Tab;
   groupId: string;
   projectId: string;
+  worktree: string;
   paneId: string | undefined;
   visible: boolean;
   /** Visible and in the focused window (its number keys are live). */
@@ -90,24 +93,46 @@ const TabContent = memo(function TabContent({
     return <KindPicker focused={focused} onPick={pick} />;
   }
   // Terminals take a real font size; everything else is scaled from its default size.
-  if (tab.kind === "terminal") return <TerminalView projectId={projectId} active={visible} fontSize={size} />;
+  if (tab.kind === "terminal") return (
+      // A restart (or switching to administrator) is a fresh shell.
+      <TerminalView
+        key={`${tab.admin ? "admin" : "user"}:${tab.restarts ?? 0}`}
+        projectId={projectId}
+        worktree={worktree}
+        admin={!!tab.admin}
+        active={visible}
+        fontSize={size}
+      />
+    );
   return (
     <div className="h-full w-full" style={{ zoom: size / FONT_META[tab.kind].def }}>
-      <ScaledContent tab={tab} groupId={groupId} projectId={projectId} visible={visible} />
+      <ScaledContent tab={tab} groupId={groupId} projectId={projectId} worktree={worktree} visible={visible} />
     </div>
   );
 });
 
-function ScaledContent({ tab, groupId, projectId, visible }: { tab: Tab; groupId: string; projectId: string; visible: boolean }) {
+function ScaledContent({
+  tab,
+  groupId,
+  projectId,
+  worktree,
+  visible,
+}: {
+  tab: Tab;
+  groupId: string;
+  projectId: string;
+  worktree: string;
+  visible: boolean;
+}) {
   switch (tab.kind) {
     case "chat":
       return tab.sessionId ? <ChatView sessionId={tab.sessionId} visible={visible} /> : null;
     case "browser":
       return <BrowserView initialUrl={tab.url} onNavigate={(url) => useGroups.getState().setTabUrl(groupId, tab.id, url)} />;
     case "changes":
-      return <GitChanges projectId={projectId} active={visible} />;
+      return <GitChanges projectId={projectId} worktree={worktree} active={visible} />;
     case "files":
-      return <FileExplorer projectId={projectId} active={visible} />;
+      return <FileExplorer key={worktree} projectId={projectId} worktree={worktree} active={visible} />;
     default:
       return null;
   }

@@ -92,6 +92,8 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN last_status TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE projects ADD COLUMN admin_terminals INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
@@ -107,7 +109,7 @@ func now() int64 { return time.Now().UnixMilli() }
 // ---- projects ----
 
 func (s *Store) Tree() ([]ProjectTree, error) {
-	rows, err := s.db.Query(`SELECT id, name, path, env, expanded, created_at FROM projects ORDER BY created_at`)
+	rows, err := s.db.Query(`SELECT id, name, path, env, expanded, admin_terminals, created_at FROM projects ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +118,7 @@ func (s *Store) Tree() ([]ProjectTree, error) {
 	index := map[string]int{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.AdminTerminals, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		index[p.ID] = len(tree)
@@ -136,8 +138,8 @@ func (s *Store) Tree() ([]ProjectTree, error) {
 
 func (s *Store) Project(id string) (Project, error) {
 	var p Project
-	err := s.db.QueryRow(`SELECT id, name, path, env, expanded, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.CreatedAt)
+	err := s.db.QueryRow(`SELECT id, name, path, env, expanded, admin_terminals, created_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.AdminTerminals, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -146,14 +148,14 @@ func (s *Store) Project(id string) (Project, error) {
 
 func (s *Store) InsertProject(p *Project) error {
 	p.CreatedAt = now()
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, env, expanded, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.Env, p.Expanded, p.CreatedAt)
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, env, expanded, admin_terminals, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.Env, p.Expanded, p.AdminTerminals, p.CreatedAt)
 	return err
 }
 
 func (s *Store) UpdateProject(p Project) error {
-	_, err := s.db.Exec(`UPDATE projects SET name = ?, path = ?, env = ?, expanded = ? WHERE id = ?`,
-		p.Name, p.Path, p.Env, p.Expanded, p.ID)
+	_, err := s.db.Exec(`UPDATE projects SET name = ?, path = ?, env = ?, expanded = ?, admin_terminals = ? WHERE id = ?`,
+		p.Name, p.Path, p.Env, p.Expanded, p.AdminTerminals, p.ID)
 	return err
 }
 
@@ -164,11 +166,11 @@ func (s *Store) DeleteProject(id string) error {
 
 // ---- sessions ----
 
-const sessionCols = `id, project_id, title, provider, model, effort, mode, provider_session_id, started, last_status, context_tokens, context_window, created_at, updated_at`
+const sessionCols = `id, project_id, title, provider, model, effort, mode, worktree, provider_session_id, started, last_status, context_tokens, context_window, created_at, updated_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	err := sc.Scan(&x.ID, &x.ProjectID, &x.Title, &x.Provider, &x.Model, &x.Effort, &x.Mode,
+	err := sc.Scan(&x.ID, &x.ProjectID, &x.Title, &x.Provider, &x.Model, &x.Effort, &x.Mode, &x.Worktree,
 		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.ContextTokens, &x.ContextWindow, &x.CreatedAt, &x.UpdatedAt)
 	return x, err
 }
@@ -209,16 +211,16 @@ func (s *Store) LatestSession() (Session, bool) {
 
 func (s *Store) InsertSession(x *Session) error {
 	x.CreatedAt, x.UpdatedAt = now(), now()
-	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.CreatedAt, x.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.CreatedAt, x.UpdatedAt)
 	return err
 }
 
 func (s *Store) UpdateSession(x *Session) error {
 	x.UpdatedAt = now()
-	_, err := s.db.Exec(`UPDATE sessions SET title = ?, provider = ?, model = ?, effort = ?, mode = ?,
+	_, err := s.db.Exec(`UPDATE sessions SET title = ?, provider = ?, model = ?, effort = ?, mode = ?, worktree = ?,
 		provider_session_id = ?, started = ?, last_status = ?, context_tokens = ?, context_window = ?, updated_at = ? WHERE id = ?`,
-		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.UpdatedAt, x.ID)
+		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.UpdatedAt, x.ID)
 	return err
 }
 

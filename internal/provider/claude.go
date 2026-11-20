@@ -95,8 +95,10 @@ type claudeLine struct {
 	} `json:"rate_limit_info"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
-	// Set on messages from subagents, whose usage is not the main conversation's.
+	// Set on messages from subagents: the id of the Agent tool call that runs them.
 	ParentToolUseID *string `json:"parent_tool_use_id"`
+	// On a user message carrying an Agent tool's result: the subagent's totals.
+	ToolUseResult json.RawMessage `json:"tool_use_result"`
 	ModelUsage      map[string]struct {
 		ContextWindow int64 `json:"contextWindow"`
 	} `json:"modelUsage"`
@@ -135,8 +137,9 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 	}
 	switch l.Type {
 	case "stream_event":
-		// Text streams token by token; everything else comes from full messages.
-		if l.Event != nil && l.Event.Type == "content_block_delta" && l.Event.Delta != nil && l.Event.Delta.Type == "text_delta" {
+		// Text streams token by token; everything else comes from full messages. A subagent's
+		// own text is not shown (Claude Code shows only its tool calls and final report).
+		if l.ParentToolUseID == nil && l.Event != nil && l.Event.Type == "content_block_delta" && l.Event.Delta != nil && l.Event.Delta.Type == "text_delta" {
 			emit(Event{Kind: EventText, Text: l.Event.Delta.Text})
 		}
 	case "assistant":
@@ -149,9 +152,17 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 				emit(Event{Kind: EventContext, ContextTokens: n})
 			}
 		}
+		parent := ""
+		if l.ParentToolUseID != nil {
+			parent = *l.ParentToolUseID
+		}
 		for _, c := range l.Message.Content {
 			if c.Type == "tool_use" {
-				emit(Event{Kind: EventToolStart, ToolID: c.ID, ToolName: c.Name, ToolInput: summarizeInput(c.Input)})
+				e := Event{Kind: EventToolStart, ToolID: c.ID, ToolName: c.Name, ToolInput: summarizeInput(c.Input), ParentID: parent}
+				if IsAgentTool(c.Name) {
+					e.Subagent, _ = c.Input["subagent_type"].(string)
+				}
+				emit(e)
 			}
 		}
 	case "user":
@@ -160,7 +171,8 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 		}
 		for _, c := range l.Message.Content {
 			if c.Type == "tool_result" {
-				emit(Event{Kind: EventToolEnd, ToolID: c.ToolUseID, ToolOutput: flattenContent(c.Content), IsError: c.IsError})
+				emit(Event{Kind: EventToolEnd, ToolID: c.ToolUseID, ToolOutput: flattenContent(c.Content), IsError: c.IsError,
+					AgentStats: agentStats(l.ToolUseResult)})
 			}
 		}
 	case "rate_limit_event":
@@ -180,6 +192,19 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 			emit(Event{Kind: EventContext, ContextWindow: window})
 		}
 	}
+}
+
+// agentStats reads a subagent's totals from a tool result's metadata, if it has them.
+func agentStats(raw json.RawMessage) *AgentStats {
+	var r struct {
+		TotalToolUseCount *int  `json:"totalToolUseCount"`
+		TotalTokens       int64 `json:"totalTokens"`
+		TotalDurationMs   int64 `json:"totalDurationMs"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &r) != nil || r.TotalToolUseCount == nil {
+		return nil
+	}
+	return &AgentStats{ToolUses: *r.TotalToolUseCount, Tokens: r.TotalTokens, DurationMs: r.TotalDurationMs}
 }
 
 var claudeWindows = []struct{ id, label string }{{"five_hour", "5h"}, {"seven_day", "Week"}}

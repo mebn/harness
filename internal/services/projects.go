@@ -79,14 +79,21 @@ func (p *ProjectService) SetExpanded(id string, expanded bool) error {
 	return p.update(id, func(x *store.Project) { x.Expanded = expanded })
 }
 
-// CreateSession starts a new session, inheriting settings from the last used session.
-func (p *ProjectService) CreateSession(projectID string) (store.Session, error) {
-	if _, err := p.store.Project(projectID); err != nil {
+// SetAdminTerminals chooses whether new terminals in the workspace run as administrator.
+func (p *ProjectService) SetAdminTerminals(id string, admin bool) error {
+	return p.update(id, func(x *store.Project) { x.AdminTerminals = admin })
+}
+
+// CreateSession starts a new session in the project's folder or one of its worktrees,
+// inheriting settings from the last used session.
+func (p *ProjectService) CreateSession(projectID, worktree string) (store.Session, error) {
+	if _, err := locate(p.store, projectID, worktree); err != nil {
 		return store.Session{}, err
 	}
 	sess := store.Session{
 		ID:                uuid.NewString(),
 		ProjectID:         projectID,
+		Worktree:          worktree,
 		Title:             "New session",
 		ProviderSessionID: uuid.NewString(),
 		Mode:              provider.ModeFull,
@@ -99,6 +106,23 @@ func (p *ProjectService) CreateSession(projectID string) (store.Session, error) 
 		sess.Provider, sess.Model, sess.Effort = info.ID, info.DefaultModel, info.DefaultEffort
 	}
 	return sess, p.store.InsertSession(&sess)
+}
+
+// SetSessionWorktree moves a session that hasn't started into a worktree ("" = the project's
+// folder). A started session stays where it began: the CLI resumes sessions per folder.
+func (p *ProjectService) SetSessionWorktree(id, worktree string) (store.Session, error) {
+	sess, err := p.store.Session(id)
+	if err != nil || sess.Worktree == worktree {
+		return sess, err
+	}
+	if sess.Started {
+		return sess, errors.New("this chat has started; it keeps running where it began")
+	}
+	if _, err := locate(p.store, sess.ProjectID, worktree); err != nil {
+		return sess, err
+	}
+	sess.Worktree = worktree
+	return sess, p.store.UpdateSession(&sess)
 }
 
 func (p *ProjectService) RenameSession(id, title string) error {

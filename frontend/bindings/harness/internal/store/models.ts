@@ -44,6 +44,28 @@ export interface Part {
     "done"?: boolean;
 
     /**
+     * ParentID is set on tool calls made by a subagent: the toolId of its Agent call.
+     */
+    "parentId"?: string;
+
+    /**
+     * Subagent is an Agent call's agent type ("Explore", "general-purpose", ...).
+     */
+    "subagent"?: string;
+
+    /**
+     * When a tool call started and finished (ms), to time subagents.
+     */
+    "startedAt"?: number;
+    "endedAt"?: number;
+
+    /**
+     * A finished subagent's totals, when the CLI reported them.
+     */
+    "agentToolUses"?: number;
+    "agentTokens"?: number;
+
+    /**
      * Attachment fields (Type "attachment").
      */
     "fileName"?: string;
@@ -65,6 +87,11 @@ export interface Project {
      */
     "env": string;
     "expanded": boolean;
+
+    /**
+     * AdminTerminals opens new terminals as administrator (Windows).
+     */
+    "adminTerminals": boolean;
     "createdAt": number;
 }
 
@@ -87,6 +114,12 @@ export interface Session {
     "model": string;
     "effort": string;
     "mode": string;
+
+    /**
+     * Worktree is the Claude Code worktree the session runs in ("" = the project's own folder).
+     * It is fixed once the session has started, since the CLI keeps sessions per folder.
+     */
+    "worktree": string;
 
     /**
      * ProviderSessionID is the id the provider CLI uses to resume context.
