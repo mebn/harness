@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ArrowDown, Loader2 } from "lucide-react";
 import type { Message } from "@/lib/backend";
 import { MessageItem } from "./message-item";
 
@@ -10,11 +10,15 @@ type Props = { messages: Message[]; running: boolean };
 export function MessageList({ messages, running }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // Mirrors `stick` for rendering: the scroll-to-end button shows while scrolled up.
+  const [atBottom, setAtBottom] = useState(true);
 
   // Follow new output only while the user is at the bottom.
   const onScroll = () => {
     const el = ref.current;
-    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
+    if (!el) return;
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
+    setAtBottom(stick.current);
   };
 
   useLayoutEffect(() => {
@@ -24,17 +28,41 @@ export function MessageList({ messages, running }: Props) {
 
   // Always jump to the bottom when a new turn starts.
   useEffect(() => {
-    if (running) stick.current = true;
+    if (running) {
+      stick.current = true;
+      setAtBottom(true);
+    }
   }, [running]);
 
+  const scrollToEnd = () => {
+    const el = ref.current;
+    if (!el) return;
+    stick.current = true;
+    setAtBottom(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
   return (
-    <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
-        {messages.map((m) => (
-          <MessageItem key={m.id} message={m} />
-        ))}
-        {running && <TurnTimer since={lastUserMessageAt(messages)} />}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
+          {messages.map((m) => (
+            <MessageItem key={m.id} message={m} />
+          ))}
+          {running && <TurnTimer since={lastUserMessageAt(messages)} />}
+        </div>
       </div>
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={scrollToEnd}
+          aria-label="Scroll to end"
+          title="Scroll to end"
+          className="absolute bottom-3 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border bg-background/90 text-muted-foreground shadow-md backdrop-blur-sm animate-in fade-in-0 zoom-in-90 hover:text-foreground"
+        >
+          <ArrowDown className="size-4" />
+        </button>
+      )}
     </div>
   );
 }

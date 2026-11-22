@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -16,12 +16,13 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { useDrag } from "@/stores/drag-store";
-import { canElevate, groupActivity, useGroups } from "@/stores/group-store";
+import { canElevate, sidebarOrder, useGroups, type Group } from "@/stores/group-store";
+import { useSort } from "@/stores/sort-store";
 import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
 import { GroupItem } from "./group-item";
 
-export function ProjectItem({ node }: { node: ProjectTree }) {
+export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group[] }) {
   const { project } = node;
   const sessions = node.sessions ?? [];
   const [editing, setEditing] = useState(false);
@@ -29,16 +30,7 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggle = useApp((s) => s.toggleProject);
   const newGroup = useGroups((s) => s.newGroup);
-  const allGroups = useGroups((s) => s.groups);
-  const tree = useApp((s) => s.tree);
-  // Most recently active first, like the workspaces themselves.
-  const groups = useMemo(
-    () =>
-      allGroups
-        .filter((g) => g.projectId === project.id)
-        .sort((a, b) => groupActivity(b, tree) - groupActivity(a, tree)),
-    [allGroups, project.id, tree],
-  );
+  const reorder = useGroupReorder(project.id, groups);
   // A tab or window from this workspace dragged over the sidebar lands here as a new group.
   const dropHere = useDrag((s) => s.drag?.projectId === project.id && s.drag.target?.kind === "newGroup");
   const rename = useApp((s) => s.renameProject);
@@ -61,9 +53,6 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
         title={project.path}
         className="group flex h-8 cursor-default items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent"
       >
-        <ChevronRight
-          className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", project.expanded && "rotate-90")}
-        />
         {state !== "idle" && <ActivityIndicator state={state} />}
         {editing ? (
           <InlineEdit
@@ -101,7 +90,7 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onSelect={() => setEditing(true)}>
-                <Pencil /> Rename
+                Rename
               </DropdownMenuItem>
               {elevatable && (
                 <DropdownMenuCheckboxItem
@@ -112,7 +101,7 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
                 </DropdownMenuCheckboxItem>
               )}
               <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
-                <Trash2 /> Remove
+                Remove
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -120,27 +109,113 @@ export function ProjectItem({ node }: { node: ProjectTree }) {
       </div>
 
       <CollapsibleContent>
-        <div className="ml-3.5 flex flex-col gap-0.5 border-l border-sidebar-border py-0.5 pl-2">
+        <div
+          ref={reorder.listRef}
+          onPointerDown={reorder.onPointerDown}
+          className="mx-3.5 flex flex-col gap-0.5 border-l border-sidebar-border py-0.5 pl-2"
+        >
           {groups.map((g) => (
-            <GroupItem key={g.id} group={g} />
+            <GroupItem
+              key={g.id}
+              group={g}
+              dragging={reorder.dragId === g.id}
+              dropEdge={reorder.drop?.id === g.id ? reorder.drop.edge : undefined}
+            />
           ))}
           {groups.length === 0 && !dropHere && (
             <button
               onClick={() => void newGroup(project.id)}
               className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
-              <Plus className="size-3.5" /> New group
+              New group
             </button>
           )}
         </div>
       </CollapsibleContent>
       {dropHere && (
-        <div className="mt-0.5 ml-3.5 border-l border-sidebar-border py-0.5 pl-2">
+        <div className="mt-0.5 mx-3.5 border-l border-sidebar-border py-0.5 pl-2">
           <div className="flex h-7 items-center gap-1.5 rounded-md border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
-            <Plus className="size-3.5" /> New group
+            New group
           </div>
         </div>
       )}
     </Collapsible>
   );
+}
+
+type DropSpot = { id: string; edge: "before" | "after" };
+
+/**
+ * Drag a group row up or down within its workspace. Dropping saves the new order and
+ * switches the sidebar to manual sorting. A press without movement stays a click.
+ */
+function useGroupReorder(projectId: string, groups: Group[]) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<DropSpot | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, [role=menu]")) return;
+    const row = target.closest<HTMLElement>("[data-drop-group]");
+    const id = row?.dataset.dropGroup;
+    if (!id || groups.length < 2) return;
+
+    const startY = e.clientY;
+    let active = false;
+    let spot: DropSpot | null = null;
+
+    const spotAt = (x: number, y: number): DropSpot | null => {
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-drop-group]");
+      if (!el || !listRef.current?.contains(el) || el.dataset.dropGroup === id) return null;
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.dropGroup!, edge: y < r.top + r.height / 2 ? "before" : "after" };
+    };
+    const onMove = (ev: PointerEvent) => {
+      if (!active) {
+        if (Math.abs(ev.clientY - startY) < 4) return;
+        active = true;
+        setDragId(id);
+        document.body.style.cursor = "grabbing";
+      }
+      // Keep the pointer's x inside the list so dragging off to the side still targets a row.
+      const rect = listRef.current!.getBoundingClientRect();
+      spot = spotAt(Math.min(Math.max(ev.clientX, rect.left + 4), rect.right - 4), ev.clientY);
+      setDrop(spot);
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", finish);
+      document.body.style.cursor = "";
+      setDragId(null);
+      setDrop(null);
+    };
+    const swallowClick = (ev: Event) => ev.stopPropagation();
+    const onUp = () => {
+      finish();
+      if (!active) return;
+      // The drag ends in a click on the row; it shouldn't open the group.
+      window.addEventListener("click", swallowClick, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0);
+      if (spot) save(id, spot);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", finish);
+  };
+
+  const save = (id: string, spot: DropSpot) => {
+    const ids = groups.map((g) => g.id).filter((x) => x !== id);
+    const at = ids.indexOf(spot.id) + (spot.edge === "after" ? 1 : 0);
+    ids.splice(at, 0, id);
+    // Freeze everything else where it is on screen now, then apply this workspace's new order.
+    const shown = sidebarOrder(useApp.getState().tree, useGroups.getState().groups);
+    const groupsOrder = Object.fromEntries(shown.map((x) => [x.node.project.id, x.groups.map((g) => g.id)]));
+    groupsOrder[projectId] = ids;
+    useSort.getState().setManual({ projects: shown.map((x) => x.node.project.id), groups: groupsOrder });
+  };
+
+  return { listRef, onPointerDown, dragId, drop };
 }

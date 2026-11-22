@@ -5,7 +5,6 @@ import { ProjectSidebar } from "@/components/sidebar/project-sidebar";
 import { Button } from "@/components/ui/button";
 import { GroupView } from "@/components/workspace/group-view";
 import { TabLayer } from "@/components/workspace/tab-layer";
-import { WorktreePicker } from "@/components/workspace/worktree-picker";
 import { useGroupTitle } from "@/components/workspace/tab-meta";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
@@ -198,10 +197,9 @@ function TopBar() {
         <PanelLeft />
       </IconButton>
       <span className="min-w-0 truncate text-[13px]">
+        {project && <span className="text-muted-foreground">{project.name} / </span>}
         <span className="font-medium">{title}</span>
-        {project && <span className="text-muted-foreground"> · {project.name}</span>}
       </span>
-      {group && <WorktreePicker group={group} />}
     </header>
   );
 }

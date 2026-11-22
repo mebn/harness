@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -40,6 +41,8 @@ func (Claude) Info() Info {
 		Modes:         commonModes,
 		DefaultModel:  "default",
 		DefaultEffort: "high",
+		Steer:         true,
+		Fast:          true,
 	}
 }
 
@@ -57,21 +60,52 @@ func (Claude) Run(ctx context.Context, req Request) (<-chan Event, error) {
 		args = append(args, "--effort", req.Effort)
 	}
 	args = append(args, "--permission-mode", claudeMode(req.Mode))
-
-	stdin := req.Prompt
-	if len(req.Attachments) > 0 {
-		// Attachments need structured input: images go in as native image blocks.
-		input, err := claudeInput(req)
-		if err != nil {
-			return nil, err
-		}
-		args = append(args, "--input-format", "stream-json")
-		stdin = input
+	if req.Fast {
+		// Headless runs need an explicit opt-in; flag settings layer over the user's own.
+		args = append(args, "--settings", `{"fastMode":true}`)
 	}
 
+	// Input is always stream-json with stdin kept open, so messages can be steered into the
+	// turn; the CLI echoes each one back when the agent takes it in.
+	args = append(args, "--input-format", "stream-json", "--replay-user-messages")
+
 	cmd := platform.Command(ctx, req.Env, req.Dir, "claude", args...)
-	// The prompt goes over stdin to avoid any shell/argv quoting issues.
-	return runJSONL(ctx, cmd, stdin, parseClaudeLine)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	steering := req.Steering
+	if steering == nil {
+		steering = NewSteering()
+	}
+	parse := func(line []byte, emit func(Event)) {
+		parseClaudeLine(line, func(e Event) {
+			switch e.Kind {
+			case eventInputTaken:
+				if id, ok := steering.taken(); ok && id != "" {
+					emit(Event{Kind: EventSteered, InputID: id})
+				}
+			case eventTurnEnd:
+				steering.turnEnded()
+			default:
+				emit(e)
+			}
+		})
+	}
+	events, err := runJSONLWith(ctx, cmd, "", parse, steering.shutdown)
+	if err != nil {
+		return nil, err
+	}
+	write := func(in Input) error {
+		msg, err := claudeInput(req.Env, in.Prompt, in.Attachments)
+		if err == nil {
+			_, err = io.WriteString(stdin, msg)
+		}
+		return err
+	}
+	// Written in the background: a large image can fill the pipe before the CLI reads it.
+	go steering.open(Input{Prompt: req.Prompt, Attachments: req.Attachments}, write, func() { _ = stdin.Close() })
+	return events, nil
 }
 
 func claudeMode(mode string) string {
@@ -93,13 +127,19 @@ type claudeLine struct {
 			ResetsAt    int64   `json:"resetsAt"`
 		} `json:"unifiedWindows"`
 	} `json:"rate_limit_info"`
-	IsError bool   `json:"is_error"`
-	Result  string `json:"result"`
+	IsError bool `json:"is_error"`
+	// Set on user messages the CLI echoes back from stdin (--replay-user-messages).
+	IsReplay bool   `json:"isReplay"`
+	Subtype  string `json:"subtype"`
+	// On the init and result lines: whether fast mode is in effect, and why not.
+	FastModeState          string `json:"fast_mode_state"`
+	FastModeDisabledReason string `json:"fast_mode_disabled_reason"`
+	Result                 string `json:"result"`
 	// Set on messages from subagents: the id of the Agent tool call that runs them.
 	ParentToolUseID *string `json:"parent_tool_use_id"`
 	// On a user message carrying an Agent tool's result: the subagent's totals.
 	ToolUseResult json.RawMessage `json:"tool_use_result"`
-	ModelUsage      map[string]struct {
+	ModelUsage    map[string]struct {
 		ContextWindow int64 `json:"contextWindow"`
 	} `json:"modelUsage"`
 	Event *struct {
@@ -135,6 +175,9 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 	if json.Unmarshal(line, &l) != nil {
 		return
 	}
+	if l.FastModeState != "" && (l.Type == "result" || l.Subtype == "init") {
+		emit(Event{Kind: EventFast, FastState: l.FastModeState, FastOffReason: l.FastModeDisabledReason})
+	}
 	switch l.Type {
 	case "stream_event":
 		// Text streams token by token; everything else comes from full messages. A subagent's
@@ -166,6 +209,10 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 			}
 		}
 	case "user":
+		if l.IsReplay {
+			emit(Event{Kind: eventInputTaken})
+			return
+		}
 		if l.Message == nil {
 			return
 		}
@@ -191,6 +238,7 @@ func parseClaudeLine(line []byte, emit func(Event)) {
 		if window > 0 {
 			emit(Event{Kind: EventContext, ContextWindow: window})
 		}
+		emit(Event{Kind: eventTurnEnd})
 	}
 }
 
@@ -232,7 +280,7 @@ func claudeUsage(l claudeLine) *usage.Snapshot {
 const maxInlineImage = 5 << 20
 
 // claudeInput builds one stream-json user message with text, images and file paths.
-func claudeInput(req Request) (string, error) {
+func claudeInput(env platform.Env, prompt string, attachments []Attachment) (string, error) {
 	type source struct {
 		Type      string `json:"type"`
 		MediaType string `json:"media_type"`
@@ -245,7 +293,7 @@ func claudeInput(req Request) (string, error) {
 	}
 	blocks := []block{}
 	var files []string
-	for _, a := range req.Attachments {
+	for _, a := range attachments {
 		if a.IsImage {
 			if data, err := os.ReadFile(a.Path); err == nil && len(data) <= maxInlineImage {
 				blocks = append(blocks, block{Type: "image", Source: &source{
@@ -254,9 +302,9 @@ func claudeInput(req Request) (string, error) {
 				continue
 			}
 		}
-		files = append(files, platform.PathFor(req.Env, a.Path))
+		files = append(files, platform.PathFor(env, a.Path))
 	}
-	blocks = append(blocks, block{Type: "text", Text: withFileList(req.Prompt, files)})
+	blocks = append(blocks, block{Type: "text", Text: withFileList(prompt, files)})
 
 	msg := map[string]any{
 		"type":    "user",

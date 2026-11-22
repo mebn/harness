@@ -5,6 +5,7 @@ package services
 const (
 	EventChatMessage    = "chat:message"
 	EventChatStatus     = "chat:status"
+	EventChatQueue      = "chat:queue"
 	EventSessionUpdated = "session:updated"
 	EventTermData       = "term:data"
 	EventTermExit       = "term:exit"

@@ -9,7 +9,7 @@ export interface Message {
     "sessionId": string;
 
     /**
-     * "user" | "assistant"
+     * "user" | "assistant" | "event" (shown in the chat only, e.g. a model switch)
      */
     "role": string;
     "parts": Part[] | null;
@@ -120,6 +120,17 @@ export interface Session {
      * It is fixed once the session has started, since the CLI keeps sessions per folder.
      */
     "worktree": string;
+
+    /**
+     * Fast asks for fast mode (Claude). FastState and FastOffReason are what the CLI last
+     * reported: "on" / "off" / "cooldown", and why it is off ("" when unknown).
+     * TurnProvider and TurnModel are what the latest turn ran with ("" before the first).
+     */
+    "turnProvider": string;
+    "turnModel": string;
+    "fast": boolean;
+    "fastState": string;
+    "fastOffReason": string;
 
     /**
      * ProviderSessionID is the id the provider CLI uses to resume context.

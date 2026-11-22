@@ -75,6 +75,6 @@ export function Tree(): $CancellablePromise<store$0.ProjectTree[] | null> {
  * UpdateSessionSettings changes provider/model/effort/mode for future turns.
  * Switching provider starts a fresh provider-side conversation.
  */
-export function UpdateSessionSettings(id: string, providerID: string, model: string, effort: string, mode: string): $CancellablePromise<store$0.Session> {
-    return $Call.ByID(831363208, id, providerID, model, effort, mode);
+export function UpdateSessionSettings(id: string, providerID: string, model: string, effort: string, mode: string, fast: boolean): $CancellablePromise<store$0.Session> {
+    return $Call.ByID(831363208, id, providerID, model, effort, mode, fast);
 }

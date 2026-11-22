@@ -28,11 +28,13 @@ import {
   type ContentKind,
   type TabKind,
 } from "@/lib/layout-tree";
-import { projectLastUsed } from "@/lib/session-state";
+import { useMemo } from "react";
+import { projectLastUsed, sessionState, strongest, type ActivityState } from "@/lib/session-state";
 import { storage } from "@/lib/storage";
 import { ProjectService } from "@/lib/backend";
 import { findSession, useApp } from "./app-store";
 import { useLayout } from "./layout-store";
+import { useSort, type SortState } from "./sort-store";
 import { useSettings } from "./settings-store";
 
 const KEY = "harness.groups";
@@ -153,16 +155,99 @@ export function groupActivity(g: Group, tree: ProjectTree[]): number {
   return t;
 }
 
-/** Workspaces most recently used first, each with its groups most recently used first (sidebar order). */
-export function sidebarOrder(tree: ProjectTree[], groups: Group[]) {
-  return [...tree]
-    .sort((a, b) => projectLastUsed(b) - projectLastUsed(a))
-    .map((node) => ({
-      node,
-      groups: groups
-        .filter((g) => g.projectId === node.project.id)
-        .sort((a, b) => groupActivity(b, tree) - groupActivity(a, tree)),
-    }));
+/** The most urgent state among a group's chats (what its sidebar row shows). */
+export function groupState(g: Group, tree: ProjectTree[], running: Record<string, boolean>, seen: Record<string, number>) {
+  return strongest(
+    tabsOf(g.root)
+      .filter((t) => t.kind === "chat" && t.sessionId)
+      .map((t) => {
+        const s = findSession(tree, t.sessionId!);
+        return s ? sessionState(s, !!running[s.id], seen[s.id]) : "idle";
+      }),
+  );
+}
+
+/** A group's name for sorting: its own title, else its chat's, else its first tab's kind. */
+function groupName(g: Group, tree: ProjectTree[]): string {
+  if (g.title) return g.title;
+  const tabs = tabsOf(g.root);
+  const chat = tabs.find((t) => t.kind === "chat" && t.sessionId);
+  return (chat && findSession(tree, chat.sessionId!)?.title) || tabs[0]?.kind || "";
+}
+
+// Status sort: finished turns first, then ones waiting for you, failed, working, and idle last.
+const STATUS_RANK: Record<ActivityState, number> = { finished: 0, waiting: 1, error: 2, working: 3, idle: 4 };
+
+/** What sidebarOrder needs besides the tree and groups; defaults to the stores' current state. */
+export type SortView = {
+  sort: Pick<SortState, "mode" | "projects" | "groups">;
+  running: Record<string, boolean>;
+  seen: Record<string, number>;
+};
+
+function currentView(): SortView {
+  const { running, seen } = useApp.getState();
+  return { sort: useSort.getState(), running, seen };
+}
+
+/** Position in a manual order; items not in it (added since) come first. */
+function manualCompare(order: string[], a: string, b: string): number | undefined {
+  const ia = order.indexOf(a);
+  const ib = order.indexOf(b);
+  if (ia === -1 && ib === -1) return undefined;
+  if (ia === -1) return -1;
+  if (ib === -1) return 1;
+  return ia - ib;
+}
+
+/** Workspaces and each one's groups in sidebar order, by the chosen sort. Ties go to the most recent. */
+export function sidebarOrder(tree: ProjectTree[], groups: Group[], view: SortView = currentView()) {
+  const { sort, running, seen } = view;
+  const nameCmp = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  const projState = (node: ProjectTree) =>
+    strongest((node.sessions ?? []).map((x) => sessionState(x, !!running[x.id], seen[x.id])));
+
+  const compareProjects = (a: ProjectTree, b: ProjectTree): number => {
+    const recent = projectLastUsed(b) - projectLastUsed(a);
+    switch (sort.mode) {
+      case "status":
+        return STATUS_RANK[projState(a)] - STATUS_RANK[projState(b)] || recent;
+      case "name":
+        return nameCmp(a.project.name, b.project.name) || recent;
+      case "manual":
+        return manualCompare(sort.projects, a.project.id, b.project.id) ?? recent;
+      default:
+        return recent;
+    }
+  };
+  const compareGroups = (projectId: string) => (a: Group, b: Group): number => {
+    const recent = groupActivity(b, tree) - groupActivity(a, tree);
+    switch (sort.mode) {
+      case "status":
+        return STATUS_RANK[groupState(a, tree, running, seen)] - STATUS_RANK[groupState(b, tree, running, seen)] || recent;
+      case "name":
+        return nameCmp(groupName(a, tree), groupName(b, tree)) || recent;
+      case "manual":
+        return manualCompare(sort.groups[projectId] ?? [], a.id, b.id) ?? recent;
+      default:
+        return recent;
+    }
+  };
+
+  return [...tree].sort(compareProjects).map((node) => ({
+    node,
+    groups: groups.filter((g) => g.projectId === node.project.id).sort(compareGroups(node.project.id)),
+  }));
+}
+
+/** Sidebar order as it is now (reactive): what the sidebar renders and ⌘1–9 counts. */
+export function useSidebarOrder() {
+  const tree = useApp((s) => s.tree);
+  const running = useApp((s) => s.running);
+  const seen = useApp((s) => s.seen);
+  const groups = useGroups((s) => s.groups);
+  const sort = useSort();
+  return useMemo(() => sidebarOrder(tree, groups, { sort, running, seen }), [tree, groups, sort, running, seen]);
 }
 
 type GroupState = {

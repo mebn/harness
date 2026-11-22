@@ -13,6 +13,17 @@ export interface Info {
     "modes": Option[] | null;
     "defaultModel": string;
     "defaultEffort": string;
+
+    /**
+     * Steer is true when messages can be sent into a running turn; otherwise steering
+     * interrupts the turn and sends the message as a new one.
+     */
+    "steer": boolean;
+
+    /**
+     * Fast is true when the provider has a fast mode.
+     */
+    "fast": boolean;
 }
 
 /**

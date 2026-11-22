@@ -28,6 +28,18 @@ function PartView({ part }: { part: Part }) {
 export const MessageItem = memo(function MessageItem({ message }: { message: Message }) {
   const parts = message.parts ?? [];
 
+  // Shown in the chat only (e.g. the model changed); never part of the conversation.
+  if (message.role === "event") {
+    const text = parts.map((p) => p.text).join(" ");
+    return (
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground" role="separator">
+        <div className="h-px flex-1 bg-border" />
+        <span>{parts[0]?.type === "model-switch" ? `Switched model · ${text}` : text}</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("\n");
     return (

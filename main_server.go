@@ -19,6 +19,7 @@ func init() {
 	// Registered events get typed payloads in the generated TS bindings.
 	application.RegisterEvent[store.Message](services.EventChatMessage)
 	application.RegisterEvent[services.ChatStatus](services.EventChatStatus)
+	application.RegisterEvent[services.ChatQueue](services.EventChatQueue)
 	application.RegisterEvent[store.Session](services.EventSessionUpdated)
 	application.RegisterEvent[services.TermData](services.EventTermData)
 	application.RegisterEvent[services.TermExit](services.EventTermExit)

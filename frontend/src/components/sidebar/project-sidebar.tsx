@@ -1,18 +1,25 @@
-import { useMemo, useState } from "react";
-import { Laptop, Plus, Search, Settings } from "lucide-react";
-import { projectLastUsed as lastUsed } from "@/lib/session-state";
+import { useState } from "react";
+import { Plus, Settings } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { dragStyle, onTitleBarDoubleClick, useMacTitleBar } from "@/components/layout/window-controls";
 import { useApp } from "@/stores/app-store";
 import { useLayout } from "@/stores/layout-store";
 import { shortcutLabel } from "@/lib/shortcuts";
-import { useGroups } from "@/stores/group-store";
+import { useGroups, useSidebarOrder } from "@/stores/group-store";
+import { SORT_LABELS, useSort, type SortMode } from "@/stores/sort-store";
 import { ProjectItem } from "./project-item";
 
 const RECENT_LIMIT = 5;
 
 export function ProjectSidebar() {
-  const tree = useApp((s) => s.tree);
   const addProject = useApp((s) => s.addProject);
   const newGroup = useGroups((s) => s.newGroup);
   const openFolder = async () => {
@@ -23,7 +30,7 @@ export function ProjectSidebar() {
   const setSearchOpen = useLayout((s) => s.setSearchOpen);
   const setSettingsOpen = useLayout((s) => s.setSettingsOpen);
   const [showAll, setShowAll] = useState(false);
-  const sorted = useMemo(() => [...tree].sort((a, b) => lastUsed(b) - lastUsed(a)), [tree]);
+  const sorted = useSidebarOrder();
   const visible = showAll ? sorted : sorted.slice(0, RECENT_LIMIT);
 
   return (
@@ -37,7 +44,6 @@ export function ProjectSidebar() {
           onClick={() => setSearchOpen(true)}
           className="flex h-8 items-center gap-2 rounded-md px-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          <Search className="size-4" />
           <span className="flex-1 text-left">Search</span>
           <kbd className="font-sans text-[11px] text-muted-foreground/70">{shortcutLabel("search")}</kbd>
         </button>
@@ -47,15 +53,18 @@ export function ProjectSidebar() {
 
       <div className="flex h-8 shrink-0 items-center justify-between pr-2 pl-4">
         <span className="text-xs font-medium text-muted-foreground">Workspaces</span>
-        <IconButton label="Open folder" onClick={() => void openFolder()} className="size-6">
-          <Plus />
-        </IconButton>
+        <div className="flex items-center gap-0.5">
+          <SortMenu />
+          <IconButton label="Open folder" onClick={() => void openFolder()} className="size-6">
+            <Plus />
+          </IconButton>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-0.5 px-2 pb-3">
-          {visible.map((node) => (
-            <ProjectItem key={node.project.id} node={node} />
+          {visible.map(({ node, groups }) => (
+            <ProjectItem key={node.project.id} node={node} groups={groups} />
           ))}
           {sorted.length > RECENT_LIMIT && (
             <button
@@ -78,6 +87,40 @@ export function ProjectSidebar() {
   );
 }
 
+const SORT_HINTS: Record<SortMode, string> = {
+  recent: "Latest activity first",
+  status: "Finished first, then waiting, failed, working",
+  name: "Alphabetical",
+  manual: "Drag groups to reorder",
+};
+
+/** Picks how workspaces and groups are ordered; dragging a group switches to manual. */
+function SortMenu() {
+  const mode = useSort((s) => s.mode);
+  const setMode = useSort((s) => s.setMode);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        title="Sort workspaces and groups"
+        className="h-6 rounded-md px-1.5 text-[11px] text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent"
+      >
+        {SORT_LABELS[mode]}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Sort by</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={mode} onValueChange={(v) => setMode(v as SortMode)}>
+          {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+            <DropdownMenuRadioItem key={m} value={m} className="flex-col items-start gap-0">
+              <span>{SORT_LABELS[m]}</span>
+              <span className="text-[11px] text-muted-foreground">{SORT_HINTS[m]}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** Which machine's server this window talks to. The server always runs locally for now. */
 function ServerBadge() {
   const system = useApp((s) => s.system);
@@ -87,10 +130,7 @@ function ServerBadge() {
       title={system.hostname ? `Connected to ${system.hostname}` : "Connected"}
       className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground"
     >
-      <span className="relative flex shrink-0">
-        <Laptop className="size-4" />
-        <span className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-emerald-500" />
-      </span>
+      <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
       <span className="truncate">{label}</span>
     </div>
   );

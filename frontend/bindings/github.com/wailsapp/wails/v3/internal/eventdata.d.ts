@@ -19,6 +19,7 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "chat:message": store$0.Message;
+            "chat:queue": services$0.ChatQueue;
             "chat:status": services$0.ChatStatus;
             "session:updated": store$0.Session;
             "term:data": services$0.TermData;

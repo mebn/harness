@@ -30,6 +30,20 @@ export function Providers(): $CancellablePromise<provider$0.Info[] | null> {
 }
 
 /**
+ * Queues returns every session's non-empty queue.
+ */
+export function Queues(): $CancellablePromise<$models.ChatQueue[] | null> {
+    return $Call.ByID(1179957713);
+}
+
+/**
+ * RemoveQueued drops a queued message. One already steered into the turn can't be taken back.
+ */
+export function RemoveQueued(sessionID: string, id: string): $CancellablePromise<void> {
+    return $Call.ByID(801738380, sessionID, id);
+}
+
+/**
  * Running returns the ids of sessions with an active turn.
  */
 export function Running(): $CancellablePromise<string[] | null> {
@@ -44,12 +58,25 @@ export function SearchMessages(query: string): $CancellablePromise<store$0.Messa
 }
 
 /**
- * Send starts a turn with the session's current provider settings.
+ * Send starts a turn with the session's current provider settings. While a turn is running
+ * the message is queued instead, and its id returned ("" when a turn started).
  */
-export function Send(sessionID: string, prompt: string, attachments: $models.AttachmentInput[] | null): $CancellablePromise<void> {
+export function Send(sessionID: string, prompt: string, attachments: $models.AttachmentInput[] | null): $CancellablePromise<string> {
     return $Call.ByID(2939044847, sessionID, prompt, attachments);
 }
 
+/**
+ * Steer sends a queued message now. With a running turn it goes into that turn when the
+ * provider supports it; otherwise the turn is stopped and the message runs next. Without a
+ * running turn it simply starts one.
+ */
+export function Steer(sessionID: string, id: string): $CancellablePromise<void> {
+    return $Call.ByID(1913953974, sessionID, id);
+}
+
+/**
+ * Stop ends the running turn. Queued messages stay queued.
+ */
 export function Stop(sessionID: string): $CancellablePromise<void> {
     return $Call.ByID(177971749, sessionID);
 }

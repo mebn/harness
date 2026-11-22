@@ -51,6 +51,18 @@ func (t *transcript) apply(e provider.Event) {
 	t.msg.Parts = parts
 }
 
+// hasTool reports whether the message holds the tool call with this id.
+func (t *transcript) hasTool(id string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, p := range t.msg.Parts {
+		if p.Type == "tool" && p.ToolID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // finish marks any still-open tool calls as done.
 func (t *transcript) finish() {
 	t.mu.Lock()

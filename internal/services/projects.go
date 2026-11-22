@@ -99,7 +99,7 @@ func (p *ProjectService) CreateSession(projectID, worktree string) (store.Sessio
 		Mode:              provider.ModeFull,
 	}
 	if last, ok := p.store.LatestSession(); ok {
-		sess.Provider, sess.Model, sess.Effort, sess.Mode = last.Provider, last.Model, last.Effort, last.Mode
+		sess.Provider, sess.Model, sess.Effort, sess.Mode, sess.Fast = last.Provider, last.Model, last.Effort, last.Mode, last.Fast
 	}
 	if _, ok := p.providers.Get(sess.Provider); !ok {
 		info := p.providers.Default().Info()
@@ -141,7 +141,7 @@ func (p *ProjectService) DeleteSession(id string) error {
 
 // UpdateSessionSettings changes provider/model/effort/mode for future turns.
 // Switching provider starts a fresh provider-side conversation.
-func (p *ProjectService) UpdateSessionSettings(id, providerID, model, effort, mode string) (store.Session, error) {
+func (p *ProjectService) UpdateSessionSettings(id, providerID, model, effort, mode string, fast bool) (store.Session, error) {
 	sess, err := p.store.Session(id)
 	if err != nil {
 		return sess, err
@@ -162,7 +162,11 @@ func (p *ProjectService) UpdateSessionSettings(id, providerID, model, effort, mo
 			effort = info.DefaultEffort
 		}
 	}
-	sess.Model, sess.Effort, sess.Mode = model, effort, mode
+	canFast := prov.Info().Fast
+	if fast != sess.Fast || !canFast {
+		sess.FastState, sess.FastOffReason = "", "" // unknown until the next turn reports it
+	}
+	sess.Model, sess.Effort, sess.Mode, sess.Fast = model, effort, mode, fast && canFast
 	return sess, p.store.UpdateSession(&sess)
 }
 

@@ -469,7 +469,7 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
       onClick={() => store.selectTab(group.id, tab.id)}
       onAuxClick={(e) => e.button === 1 && store.closeTab(group.id, tab.id)}
       className={cn(
-        "group/tab relative flex h-7 max-w-56 shrink-0 cursor-default items-center gap-1.5 rounded-lg pr-1 pl-2 text-[13px]",
+        "group/tab relative flex h-7 max-w-56 shrink-0 cursor-default items-center gap-1.5 rounded-lg pr-2.5 pl-1.5 text-[13px]",
         single
           ? "font-medium text-foreground"
           : selected
@@ -478,22 +478,22 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
         isDragged && "opacity-50",
       )}
     >
-      <TabIcon kind={tab.kind} className="size-3.5 shrink-0 opacity-80" />
+      {/* The icon swaps for the close button on hover. */}
+      <span className="relative flex size-4 shrink-0 items-center justify-center">
+        <TabIcon kind={tab.kind} className="size-3.5 opacity-80 group-hover/tab:invisible" />
+        <button
+          aria-label={`Close ${label}`}
+          title={`Close tab (${shortcutLabel("closeTab")})`}
+          onClick={(e) => {
+            e.stopPropagation();
+            store.closeTab(group.id, tab.id);
+          }}
+          className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-foreground/10 hover:text-foreground"
+        >
+          <X className="size-3" />
+        </button>
+      </span>
       <span className="truncate">{label}</span>
-      <button
-        aria-label={`Close ${label}`}
-        title={`Close tab (${shortcutLabel("closeTab")})`}
-        onClick={(e) => {
-          e.stopPropagation();
-          store.closeTab(group.id, tab.id);
-        }}
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-foreground/10 hover:text-foreground",
-          single && "hidden",
-        )}
-      >
-        <X className="size-3" />
-      </button>
       <TabMenu tab={tab} open={menuOpen} onOpenChange={setMenuOpen} />
     </div>
   );

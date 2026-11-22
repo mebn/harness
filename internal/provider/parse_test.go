@@ -11,7 +11,11 @@ import (
 func collect(parse lineParser, lines ...string) []Event {
 	var out []Event
 	for _, l := range lines {
-		parse([]byte(l), func(e Event) { out = append(out, e) })
+		parse([]byte(l), func(e Event) {
+			if e.Kind < eventInputTaken { // skip events internal to providers
+				out = append(out, e)
+			}
+		})
 	}
 	return out
 }
@@ -65,7 +69,7 @@ func TestClaudeInputAttachments(t *testing.T) {
 		{Name: "a.png", MimeType: "image/png", Path: img, IsImage: true},
 		{Name: "notes.txt", MimeType: "text/plain", Path: filepath.Join(dir, "notes.txt")},
 	}}
-	in, err := claudeInput(req)
+	in, err := claudeInput(req.Env, req.Prompt, req.Attachments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +132,21 @@ func TestParseClaudeSubagent(t *testing.T) {
 	}
 	if s := ev[3].AgentStats; s == nil || s.ToolUses != 1 || s.Tokens != 1234 || s.DurationMs != 5000 || ev[3].ToolOutput != "report" {
 		t.Fatalf("agent result: %+v", ev[3])
+	}
+}
+
+func TestParseClaudeFastMode(t *testing.T) {
+	ev := collect(parseClaudeLine,
+		`{"type":"system","subtype":"init","fast_mode_state":"off","fast_mode_disabled_reason":"extra_usage_disabled"}`,
+		`{"type":"system","subtype":"hook_started"}`,
+		`{"type":"result","result":"hi","fast_mode_state":"on"}`)
+	var fast []Event
+	for _, e := range ev {
+		if e.Kind == EventFast {
+			fast = append(fast, e)
+		}
+	}
+	if len(fast) != 2 || fast[0].FastState != "off" || fast[0].FastOffReason != "extra_usage_disabled" || fast[1].FastState != "on" {
+		t.Fatalf("fast events: %+v", fast)
 	}
 }

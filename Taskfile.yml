@@ -42,7 +42,7 @@ tasks:
       # -H windowsgui: no console window; output goes to server.log when the window starts it.
       SERVER_FLAGS: '{{if eq .DEV "true"}}-tags harness_server -buildvcs=false -gcflags=all="-l"{{if eq OS "windows"}} -ldflags="-H windowsgui"{{end}}{{else}}-tags harness_server,production -trimpath -buildvcs=false -ldflags="-w -s{{if eq OS "windows"}} -H windowsgui{{end}}"{{end}}'
     env:
-      CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
+      CGO_ENABLED: '{{if .CGO_ENABLED}}{{.CGO_ENABLED}}{{else if eq OS "windows"}}0{{else}}1{{end}}'
 
   package:
     summary: Packages a production build of the application

@@ -24,6 +24,11 @@ type Info struct {
 	Modes         []Option `json:"modes"`
 	DefaultModel  string   `json:"defaultModel"`
 	DefaultEffort string   `json:"defaultEffort"`
+	// Steer is true when messages can be sent into a running turn; otherwise steering
+	// interrupts the turn and sends the message as a new one.
+	Steer bool `json:"steer"`
+	// Fast is true when the provider has a fast mode.
+	Fast bool `json:"fast"`
 }
 
 // Permission modes shared by all providers; each maps them to its own flags.
@@ -47,10 +52,13 @@ type Request struct {
 	Model     string
 	Effort    string
 	Mode      string
+	Fast      bool   // fast mode, when the provider has one
 	SessionID string // provider-side session id
 	// Attachments are files saved on the host; providers decide how to pass them.
 	Attachments []Attachment
 	Resume      bool // true when SessionID already exists on the provider side
+	// Steering, when set, lets the caller send more messages while the turn runs.
+	Steering *Steering
 }
 
 // Attachment is a file the user attached to a turn.
@@ -70,6 +78,14 @@ const (
 	EventError
 	EventUsage   // plan usage limits reported by the provider
 	EventContext // context window usage of the conversation so far
+	// EventSteered: the agent took in a message sent through Steering (InputID says which).
+	EventSteered
+	// EventFast: the provider reported fast mode's state (FastState, FastOffReason).
+	EventFast
+
+	// Internal to providers, never sent to callers.
+	eventInputTaken // the CLI echoed a user message back: the agent has taken it in
+	eventTurnEnd    // the agent finished responding to everything it has taken in
 )
 
 // Event is a normalized streaming event from a provider.
@@ -91,6 +107,9 @@ type Event struct {
 	// EventContext: tokens currently in context, and the model's window (0 = not reported).
 	ContextTokens int64
 	ContextWindow int64
+	InputID       string // EventSteered
+	FastState     string // EventFast: "on" | "off" | "cooldown"
+	FastOffReason string // EventFast: why fast mode is off, e.g. "extra_usage_disabled"
 }
 
 // AgentStats summarizes a finished subagent run.

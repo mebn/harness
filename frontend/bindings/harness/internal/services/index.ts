@@ -20,8 +20,10 @@ export {
 
 export type {
     AttachmentInput,
+    ChatQueue,
     ChatStatus,
     FileEntry,
+    QueuedMessage,
     SystemInfo,
     TermData,
     TermExit

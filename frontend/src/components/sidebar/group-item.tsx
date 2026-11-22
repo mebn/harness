@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FolderGit2, MoreHorizontal, Pencil, X } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import {
   DropdownMenu,
@@ -8,7 +8,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TabIcon, useGroupTitle } from "@/components/workspace/tab-meta";
+import { useGroupTitle } from "@/components/workspace/tab-meta";
 import { panesOf, tabsOf } from "@/lib/layout-tree";
 import { sessionState, strongest } from "@/lib/session-state";
 import { shortcutLabel } from "@/lib/shortcuts";
@@ -22,7 +22,15 @@ import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
 
 /** A group in the sidebar: its name, activity, and how many tabs it holds. */
-export function GroupItem({ group }: { group: Group }) {
+type Props = {
+  group: Group;
+  /** Being dragged to a new position. */
+  dragging?: boolean;
+  /** A dragged group will land on this side of the row. */
+  dropEdge?: "before" | "after";
+};
+
+export function GroupItem({ group, dragging, dropEdge }: Props) {
   const [editingByMenu, setEditing] = useState(false);
   // The ⋯ menu; right-clicking the row opens it too.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -75,7 +83,15 @@ export function GroupItem({ group }: { group: Group }) {
   };
 
   return (
-    <div data-drop-group={group.id} data-project={group.projectId}>
+    <div data-drop-group={group.id} data-project={group.projectId} className={cn("relative", dragging && "opacity-40")}>
+      {dropEdge && (
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-ring",
+            dropEdge === "before" ? "-top-[2px]" : "-bottom-[2px]",
+          )}
+        />
+      )}
       <div
         role="button"
         onClick={() => reveal(group.id)}
@@ -90,13 +106,9 @@ export function GroupItem({ group }: { group: Group }) {
           dropTarget && "bg-ring/15 text-foreground ring-1 ring-ring/60",
         )}
       >
-        {/* Fixed-width slot keeps titles aligned: activity, else the single tab's kind. */}
+        {/* Fixed-width slot keeps titles aligned when activity shows. */}
         <span className="flex size-3.5 shrink-0 items-center justify-center">
-          {state !== "idle" ? (
-            <ActivityIndicator state={state} />
-          ) : (
-            tabs.length === 1 && <TabIcon kind={tabs[0].kind} className="size-3.5 opacity-70" />
-          )}
+          <ActivityIndicator state={state} />
         </span>
         {editing ? (
           <InlineEdit
@@ -111,9 +123,8 @@ export function GroupItem({ group }: { group: Group }) {
           <span className={cn("flex-1 truncate", STATE_TEXT[state])}>{title}</span>
         )}
         {group.worktree && !editing && (
-          <span title={`Worktree: ${group.worktree}`} className="flex max-w-24 shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
-            <FolderGit2 className="size-3 shrink-0" />
-            <span className="truncate">{group.worktree}</span>
+          <span title={`Worktree: ${group.worktree}`} className="max-w-24 shrink-0 truncate text-[10px] text-muted-foreground">
+            {group.worktree}
           </span>
         )}
         {tabs.length > 1 && number === 0 && (
@@ -136,11 +147,11 @@ export function GroupItem({ group }: { group: Group }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-52" onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem onSelect={() => setEditing(true)}>
-                  <Pencil /> Rename
+                  Rename
                   <DropdownMenuShortcut>{shortcutLabel("renameGroup")}</DropdownMenuShortcut>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => closeGroup(group.id)}>
-                  <X /> Close group
+                  Close group
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

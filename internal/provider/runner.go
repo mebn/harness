@@ -15,9 +15,14 @@ import (
 // lineParser turns one stdout line into zero or more events.
 type lineParser func(line []byte, emit func(Event))
 
-// runJSONL starts cmd, feeds stdin, parses stdout line by line and closes the
+// runJSONL starts cmd, feeds stdin (if set), parses stdout line by line and closes the
 // channel when the process exits. A failing exit becomes an EventError.
 func runJSONL(ctx context.Context, cmd *exec.Cmd, stdin string, parse lineParser) (<-chan Event, error) {
+	return runJSONLWith(ctx, cmd, stdin, parse, nil)
+}
+
+// runJSONLWith is runJSONL with a hook that runs once the process has exited.
+func runJSONLWith(ctx context.Context, cmd *exec.Cmd, stdin string, parse lineParser, onExit func()) (<-chan Event, error) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -50,6 +55,9 @@ func runJSONL(ctx context.Context, cmd *exec.Cmd, stdin string, parse lineParser
 		}
 		_, _ = io.Copy(io.Discard, stdout)
 		err := cmd.Wait()
+		if onExit != nil {
+			onExit()
+		}
 		if err != nil && ctx.Err() == nil {
 			msg := strings.TrimSpace(stderr.String())
 			var exitErr *exec.ExitError

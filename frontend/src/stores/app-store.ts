@@ -11,7 +11,7 @@ import {
   type SystemInfo,
 } from "@/lib/backend";
 import { storage } from "@/lib/storage";
-import type { AttachmentInput } from "@bindings/harness/internal/services/models";
+import type { AttachmentInput, ChatQueue, QueuedMessage } from "@bindings/harness/internal/services/models";
 
 const SEEN_KEY = "harness.seen";
 
@@ -23,7 +23,7 @@ function loadSeen(): Record<string, number> {
   }
 }
 
-export type SessionSettings = Pick<Session, "provider" | "model" | "effort" | "mode">;
+export type SessionSettings = Pick<Session, "provider" | "model" | "effort" | "mode" | "fast">;
 
 type AppState = {
   ready: boolean;
@@ -32,6 +32,8 @@ type AppState = {
   tree: ProjectTree[];
   messages: Record<string, Message[]>;
   running: Record<string, boolean>;
+  /** Messages sent while the agent was busy, per session, oldest first. */
+  queues: Record<string, QueuedMessage[]>;
   /** When each session was last viewed; newer activity shows as unseen in the sidebar. */
   seen: Record<string, number>;
 
@@ -53,13 +55,18 @@ type AppState = {
   loadMessages: (id: string) => Promise<void>;
   updateSettings: (id: string, patch: Partial<SessionSettings>) => Promise<void>;
 
-  send: (sessionId: string, prompt: string, attachments?: AttachmentInput[]) => Promise<void>;
+  /** Starts a turn, or queues the message while one is running (returns its queue id). */
+  send: (sessionId: string, prompt: string, attachments?: AttachmentInput[]) => Promise<string>;
+  /** Sends a queued message into the running turn now (or starts it when idle). */
+  steer: (sessionId: string, id: string) => Promise<void>;
+  removeQueued: (sessionId: string, id: string) => Promise<void>;
   stop: (sessionId: string) => void;
   markSeen: (sessionId: string) => void;
 
   // Backend event handlers
   onMessage: (m: Message) => void;
   onStatus: (sessionId: string, running: boolean) => void;
+  onQueue: (q: ChatQueue) => void;
   onSession: (s: Session) => void;
 };
 
@@ -77,20 +84,23 @@ export const useApp = create<AppState>((set, get) => ({
   tree: [],
   messages: {},
   running: {},
+  queues: {},
   seen: loadSeen(),
 
   init: async () => {
-    const [system, providers, tree, running] = await Promise.all([
+    const [system, providers, tree, running, queues] = await Promise.all([
       SystemService.Info(),
       ChatService.Providers(),
       ProjectService.Tree(),
       ChatService.Running(),
+      ChatService.Queues(),
     ]);
     set({
       system,
       providers: providers ?? [],
       tree: tree ?? [],
       running: Object.fromEntries((running ?? []).map((id) => [id, true])),
+      queues: Object.fromEntries((queues ?? []).map((q) => [q.sessionId, q.items ?? []])),
       ready: true,
     });
     // Sessions never tracked before count as seen, so existing history starts quiet.
@@ -176,19 +186,24 @@ export const useApp = create<AppState>((set, get) => ({
     if (!current) return;
     const next = { ...current, ...patch };
     set({ tree: mapSession(get().tree, id, () => next) }); // optimistic
-    const saved = await ProjectService.UpdateSessionSettings(id, next.provider, next.model, next.effort, next.mode);
+    const saved = await ProjectService.UpdateSessionSettings(id, next.provider, next.model, next.effort, next.mode, next.fast);
     set({ tree: mapSession(get().tree, id, () => saved) });
   },
 
   send: async (sessionId, prompt, attachments = []) => {
+    const wasRunning = !!get().running[sessionId];
     set({ running: { ...get().running, [sessionId]: true } });
     try {
-      await ChatService.Send(sessionId, prompt, attachments);
+      return await ChatService.Send(sessionId, prompt, attachments);
     } catch (err) {
-      set({ running: { ...get().running, [sessionId]: false } });
+      if (!wasRunning) set({ running: { ...get().running, [sessionId]: false } });
       throw err;
     }
   },
+
+  steer: (sessionId, id) => ChatService.Steer(sessionId, id),
+
+  removeQueued: (sessionId, id) => ChatService.RemoveQueued(sessionId, id),
 
   stop: (sessionId) => void ChatService.Stop(sessionId),
 
@@ -207,6 +222,8 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   onStatus: (sessionId, running) => set({ running: { ...get().running, [sessionId]: running } }),
+
+  onQueue: (q) => set({ queues: { ...get().queues, [q.sessionId]: q.items ?? [] } }),
 
   // Chats that are on screen mark their own activity as seen.
   onSession: (s) => set({ tree: mapSession(get().tree, s.id, () => s) }),

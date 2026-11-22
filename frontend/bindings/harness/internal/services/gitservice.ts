@@ -16,10 +16,24 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as gitx$0 from "../gitx/models.js";
 
 /**
+ * Branches lists local branches of the project's checkout or a worktree, current first.
+ */
+export function Branches(projectID: string, worktree: string): $CancellablePromise<gitx$0.Branch[] | null> {
+    return $Call.ByID(3398579339, projectID, worktree);
+}
+
+/**
  * Commit stages all changes and commits them with message.
  */
 export function Commit(projectID: string, worktree: string, message: string): $CancellablePromise<void> {
     return $Call.ByID(4147182970, projectID, worktree, message);
+}
+
+/**
+ * CreateBranch makes a branch from the current commit and switches to it.
+ */
+export function CreateBranch(projectID: string, worktree: string, branch: string): $CancellablePromise<void> {
+    return $Call.ByID(4277066795, projectID, worktree, branch);
 }
 
 /**
@@ -39,6 +53,13 @@ export function Push(projectID: string, worktree: string): $CancellablePromise<v
 
 export function Status(projectID: string, worktree: string): $CancellablePromise<gitx$0.Status> {
     return $Call.ByID(946063477, projectID, worktree);
+}
+
+/**
+ * SwitchBranch checks out an existing branch in the project's checkout or a worktree.
+ */
+export function SwitchBranch(projectID: string, worktree: string, branch: string): $CancellablePromise<void> {
+    return $Call.ByID(4109009195, projectID, worktree, branch);
 }
 
 /**

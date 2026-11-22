@@ -2,14 +2,14 @@ package store
 
 // Project is a folder on disk that sessions run in.
 type Project struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Env       string `json:"env"` // "native" | "wsl", inferred from Path
-	Expanded  bool   `json:"expanded"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Env      string `json:"env"` // "native" | "wsl", inferred from Path
+	Expanded bool   `json:"expanded"`
 	// AdminTerminals opens new terminals as administrator (Windows).
-	AdminTerminals bool `json:"adminTerminals"`
-	CreatedAt int64  `json:"createdAt"`
+	AdminTerminals bool  `json:"adminTerminals"`
+	CreatedAt      int64 `json:"createdAt"`
 }
 
 // Session is one agent conversation inside a project.
@@ -24,6 +24,14 @@ type Session struct {
 	// Worktree is the Claude Code worktree the session runs in ("" = the project's own folder).
 	// It is fixed once the session has started, since the CLI keeps sessions per folder.
 	Worktree string `json:"worktree"`
+	// Fast asks for fast mode (Claude). FastState and FastOffReason are what the CLI last
+	// reported: "on" / "off" / "cooldown", and why it is off ("" when unknown).
+	// TurnProvider and TurnModel are what the latest turn ran with ("" before the first).
+	TurnProvider  string `json:"turnProvider"`
+	TurnModel     string `json:"turnModel"`
+	Fast          bool   `json:"fast"`
+	FastState     string `json:"fastState"`
+	FastOffReason string `json:"fastOffReason"`
 	// ProviderSessionID is the id the provider CLI uses to resume context.
 	ProviderSessionID string `json:"providerSessionId"`
 	// Started is true once the provider has created its session (resume instead of create).
@@ -75,7 +83,7 @@ type Part struct {
 type Message struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionId"`
-	Role      string `json:"role"` // "user" | "assistant"
+	Role      string `json:"role"` // "user" | "assistant" | "event" (shown in the chat only, e.g. a model switch)
 	Parts     []Part `json:"parts"`
 	CreatedAt int64  `json:"createdAt"`
 }

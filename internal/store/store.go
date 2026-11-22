@@ -94,6 +94,11 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE projects ADD COLUMN admin_terminals INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN fast INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN fast_state TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN fast_off_reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN turn_provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN turn_model TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
@@ -166,12 +171,13 @@ func (s *Store) DeleteProject(id string) error {
 
 // ---- sessions ----
 
-const sessionCols = `id, project_id, title, provider, model, effort, mode, worktree, provider_session_id, started, last_status, context_tokens, context_window, created_at, updated_at`
+const sessionCols = `id, project_id, title, provider, model, effort, mode, worktree, provider_session_id, started, last_status, context_tokens, context_window, fast, fast_state, fast_off_reason, turn_provider, turn_model, created_at, updated_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	var x Session
 	err := sc.Scan(&x.ID, &x.ProjectID, &x.Title, &x.Provider, &x.Model, &x.Effort, &x.Mode, &x.Worktree,
-		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.ContextTokens, &x.ContextWindow, &x.CreatedAt, &x.UpdatedAt)
+		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.ContextTokens, &x.ContextWindow, &x.Fast, &x.FastState, &x.FastOffReason,
+		&x.TurnProvider, &x.TurnModel, &x.CreatedAt, &x.UpdatedAt)
 	return x, err
 }
 
@@ -211,16 +217,19 @@ func (s *Store) LatestSession() (Session, bool) {
 
 func (s *Store) InsertSession(x *Session) error {
 	x.CreatedAt, x.UpdatedAt = now(), now()
-	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.CreatedAt, x.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus,
+		x.ContextTokens, x.ContextWindow, x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel, x.CreatedAt, x.UpdatedAt)
 	return err
 }
 
 func (s *Store) UpdateSession(x *Session) error {
 	x.UpdatedAt = now()
 	_, err := s.db.Exec(`UPDATE sessions SET title = ?, provider = ?, model = ?, effort = ?, mode = ?, worktree = ?,
-		provider_session_id = ?, started = ?, last_status = ?, context_tokens = ?, context_window = ?, updated_at = ? WHERE id = ?`,
-		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow, x.UpdatedAt, x.ID)
+		provider_session_id = ?, started = ?, last_status = ?, context_tokens = ?, context_window = ?,
+		fast = ?, fast_state = ?, fast_off_reason = ?, turn_provider = ?, turn_model = ?, updated_at = ? WHERE id = ?`,
+		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow,
+		x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel, x.UpdatedAt, x.ID)
 	return err
 }
 
@@ -281,7 +290,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageHit, error) {
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
 	rows, err := s.db.Query(`SELECT id, session_id, role, parts, created_at FROM messages
-		WHERE parts LIKE ? ESCAPE '\' ORDER BY created_at DESC LIMIT ?`, "%"+escaped+"%", limit*3)
+		WHERE parts LIKE ? ESCAPE '\' AND role != 'event' ORDER BY created_at DESC LIMIT ?`, "%"+escaped+"%", limit*3)
 	if err != nil {
 		return nil, err
 	}

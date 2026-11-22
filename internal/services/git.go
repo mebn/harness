@@ -61,6 +61,33 @@ func (g *GitService) Push(projectID, worktree string) error {
 	return r.Push(context.Background(), st.Upstream != "")
 }
 
+// Branches lists local branches of the project's checkout or a worktree, current first.
+func (g *GitService) Branches(projectID, worktree string) ([]gitx.Branch, error) {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return nil, err
+	}
+	return r.Branches(context.Background())
+}
+
+// SwitchBranch checks out an existing branch in the project's checkout or a worktree.
+func (g *GitService) SwitchBranch(projectID, worktree, branch string) error {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return err
+	}
+	return r.Switch(context.Background(), branch)
+}
+
+// CreateBranch makes a branch from the current commit and switches to it.
+func (g *GitService) CreateBranch(projectID, worktree, branch string) error {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return err
+	}
+	return r.CreateBranch(context.Background(), strings.TrimSpace(branch))
+}
+
 // Worktrees lists the project's Claude Code worktrees (none outside a git repository).
 func (g *GitService) Worktrees(projectID string) ([]gitx.Worktree, error) {
 	proj, err := g.store.Project(projectID)
