@@ -21,7 +21,11 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Info() provider.Info { return provider.Info{ID: "fake", Name: "Fake"} }
 
-func (f *fakeProvider) Run(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+func (f *fakeProvider) Open(ctx context.Context, req provider.OpenRequest) (provider.Conn, error) {
+	return provider.OpenPerTurn(ctx, req, f.run), nil
+}
+
+func (f *fakeProvider) run(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
 	f.mu.Lock()
 	f.prompts = append(f.prompts, req.Prompt)
 	f.mu.Unlock()

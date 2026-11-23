@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Settings } from "lucide-react";
+import { Command, Plus, Settings } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
 import {
   DropdownMenu,
@@ -39,17 +39,7 @@ export function ProjectSidebar() {
       {/* On macOS the traffic lights sit here; the strip doubles as the window's drag region. */}
       {isMac && <div className="h-11 shrink-0" style={{ ...dragStyle, paddingLeft: 80 }} onDoubleClick={onTitleBarDoubleClick} />}
 
-      <nav className="flex flex-col gap-0.5 px-2 pt-2">
-        <button
-          onClick={() => setSearchOpen(true)}
-          className="flex h-8 items-center gap-2 rounded-md px-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          <span className="flex-1 text-left">Search</span>
-          <kbd className="font-sans text-[11px] text-muted-foreground/70">{shortcutLabel("search")}</kbd>
-        </button>
-      </nav>
-
-      <div className="h-2" />
+      <div className="h-2 shrink-0" />
 
       <div className="flex h-8 shrink-0 items-center justify-between pr-2 pl-4">
         <span className="text-xs font-medium text-muted-foreground">Workspaces</span>
@@ -62,7 +52,7 @@ export function ProjectSidebar() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-0.5 px-2 pb-3">
+        <div className="flex flex-col gap-2 px-2 pb-3">
           {visible.map(({ node, groups }) => (
             <ProjectItem key={node.project.id} node={node} groups={groups} />
           ))}
@@ -79,6 +69,9 @@ export function ProjectSidebar() {
 
       <footer className="flex h-11 shrink-0 items-center gap-1 px-2">
         <ServerBadge />
+        <IconButton label={`Actions and chats (${shortcutLabel("search")})`} onClick={() => setSearchOpen(true)}>
+          <Command />
+        </IconButton>
         <IconButton label={`Settings (${shortcutLabel("settings")})`} onClick={() => setSettingsOpen(true)}>
           <Settings />
         </IconButton>

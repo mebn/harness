@@ -8,6 +8,8 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 type LayoutState = {
   sidebarOpen: boolean;
   searchOpen: boolean;
+  /** The file finder ("files") or text search ("text"), or null when closed. */
+  fileSearch: "files" | "text" | null;
   settingsOpen: boolean;
   /** Settings category to show when opened. */
   settingsCategory: string | undefined;
@@ -21,6 +23,7 @@ type LayoutState = {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setSearchOpen: (open: boolean) => void;
+  setFileSearch: (mode: "files" | "text" | null) => void;
   setSettingsOpen: (open: boolean, category?: string) => void;
   setRenamingGroup: (id: string | null) => void;
   setModHeld: (held: boolean) => void;
@@ -29,6 +32,7 @@ type LayoutState = {
 export const useLayout = create<LayoutState>((set, get) => ({
   sidebarOpen: storage.get(SIDEBAR_KEY) !== "false",
   searchOpen: false,
+  fileSearch: null,
   settingsOpen: false,
   settingsCategory: undefined,
   renamingGroup: null,
@@ -45,6 +49,7 @@ export const useLayout = create<LayoutState>((set, get) => ({
   },
   toggleSidebar: () => get().setSidebarOpen(!get().sidebarOpen),
   setSearchOpen: (searchOpen) => set({ searchOpen }),
+  setFileSearch: (fileSearch) => set({ fileSearch }),
   setSettingsOpen: (settingsOpen, settingsCategory) => set({ settingsOpen, settingsCategory }),
   setRenamingGroup: (renamingGroup) => set({ renamingGroup }),
   setModHeld: (modHeld) => get().modHeld !== modHeld && set({ modHeld }),

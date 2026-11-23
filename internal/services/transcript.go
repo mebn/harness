@@ -16,26 +16,46 @@ type transcript struct {
 	dirty bool
 }
 
-func (t *transcript) apply(e provider.Event) {
+// event is a provider event plus what the chat service adds to it.
+type event struct {
+	provider.Event
+	ImageURLs []string // saved copies of e.Images
+}
+
+func (t *transcript) apply(pe provider.Event) { t.applyEvent(event{Event: pe}) }
+
+func (t *transcript) applyEvent(e event) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.dirty = true
 	parts := t.msg.Parts
 	switch e.Kind {
-	case provider.EventText:
-		if n := len(parts); n > 0 && parts[n-1].Type == "text" {
+	case provider.EventText, provider.EventThinking:
+		typ := "text"
+		if e.Kind == provider.EventThinking {
+			typ = "thinking"
+		}
+		if n := len(parts); n > 0 && parts[n-1].Type == typ && !parts[n-1].Done {
 			parts[n-1].Text += e.Text
 		} else {
-			parts = append(parts, store.Part{Type: "text", Text: e.Text})
+			// A new block ends the thinking before it.
+			if n := len(parts); n > 0 && parts[n-1].Type == "thinking" {
+				parts[n-1].Done = true
+			}
+			parts = append(parts, store.Part{Type: typ, Text: e.Text, StartedAt: time.Now().UnixMilli()})
 		}
 	case provider.EventToolStart:
+		if n := len(parts); n > 0 && parts[n-1].Type == "thinking" {
+			parts[n-1].Done = true
+		}
 		parts = append(parts, store.Part{Type: "tool", ToolID: e.ToolID, ToolName: e.ToolName, ToolInput: e.ToolInput,
-			ParentID: e.ParentID, Subagent: e.Subagent, StartedAt: time.Now().UnixMilli()})
+			ToolArgs: e.ToolArgs, ParentID: e.ParentID, Subagent: e.Subagent, StartedAt: time.Now().UnixMilli()})
 	case provider.EventToolEnd:
 		for i := len(parts) - 1; i >= 0; i-- {
 			if parts[i].Type == "tool" && parts[i].ToolID == e.ToolID {
 				p := &parts[i]
 				p.ToolOutput, p.IsError, p.Done, p.EndedAt = e.ToolOutput, e.IsError, true, time.Now().UnixMilli()
+				p.Images = e.ImageURLs
 				if s := e.AgentStats; s != nil {
 					p.AgentToolUses, p.AgentTokens = s.ToolUses, s.Tokens
 					if s.DurationMs > 0 {

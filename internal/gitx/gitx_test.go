@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"harness/internal/platform"
@@ -12,13 +13,26 @@ import (
 
 func TestParseStatus(t *testing.T) {
 	var st Status
-	out := "## main...origin/main [ahead 2, behind 1]\x00 M a.go\x00R  new.go\x00old.go\x00?? x.txt\x00"
+	out := "## main...origin/main [ahead 2, behind 1]\x00 M a.go\x00R  new.go\x00old.go\x00?? x.txt\x00MD b.go\x00UU c.go\x00"
 	files := parseStatus([]byte(out), &st)
 	if st.Branch != "main" || st.Upstream != "origin/main" || st.Ahead != 2 || st.Behind != 1 {
 		t.Fatalf("branch: %+v", st)
 	}
-	if len(files) != 3 || files[1].Status != "R" || files[1].OldPath != "old.go" || files[2].Status != "?" {
+	want := []File{
+		{Path: "a.go", Status: "M"},
+		{Path: "new.go", OldPath: "old.go", Status: "R", Staged: true},
+		{Path: "x.txt", Status: "?"},
+		{Path: "b.go", Status: "M", Staged: true},
+		{Path: "b.go", Status: "D"},
+		{Path: "c.go", Status: "!"},
+	}
+	if len(files) != len(want) {
 		t.Fatalf("files: %+v", files)
+	}
+	for i := range want {
+		if files[i] != want[i] {
+			t.Fatalf("file %d: got %+v want %+v", i, files[i], want[i])
+		}
 	}
 }
 
@@ -54,7 +68,18 @@ func TestRepoRoundTrip(t *testing.T) {
 	if err != nil || !st.IsRepo || len(st.Files) != 1 || st.Files[0].Status != "?" || st.Files[0].Added != 2 {
 		t.Fatalf("untracked: %+v %v", st, err)
 	}
-	if err := r.CommitAll(ctx, "init"); err != nil {
+	// Unstaging before the first commit has no HEAD to restore from.
+	if err := r.Stage(ctx, []string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Unstage(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ = r.Status(ctx); len(st.Files) != 1 || st.Files[0].Staged {
+		t.Fatalf("unstaged before first commit: %+v", st.Files)
+	}
+	// Nothing staged: commit takes everything.
+	if err := r.Commit(ctx, "init"); err != nil {
 		t.Fatal(err)
 	}
 	write("a.txt", "one\nTWO\nthree\n")
@@ -65,5 +90,49 @@ func TestRepoRoundTrip(t *testing.T) {
 	diff, err := r.Diff(ctx, st.Files[0])
 	if err != nil || diff == "" {
 		t.Fatalf("diff: %q %v", diff, err)
+	}
+
+	// Stage the edit, edit again: one staged and one unstaged entry.
+	if err := r.Stage(ctx, []string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	write("a.txt", "one\nTWO\nthree\nfour\n")
+	write("b.txt", "new\n")
+	st, _ = r.Status(ctx)
+	if len(st.Files) != 3 || !st.Files[0].Staged || st.Files[0].Added != 2 || st.Files[1].Staged || st.Files[1].Added != 1 {
+		t.Fatalf("staged+unstaged: %+v", st.Files)
+	}
+	if diff, err := r.Diff(ctx, st.Files[0]); err != nil || !strings.Contains(diff, "+three") || strings.Contains(diff, "+four") {
+		t.Fatalf("staged diff: %q %v", diff, err)
+	}
+
+	// Discard drops the unstaged edit and the untracked file, keeping what is staged.
+	if err := r.Discard(ctx, st.Files); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = r.Status(ctx)
+	if len(st.Files) != 1 || !st.Files[0].Staged {
+		t.Fatalf("after discard: %+v", st.Files)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b.txt")); !os.IsNotExist(err) {
+		t.Fatal("untracked file not deleted")
+	}
+
+	// Commit takes only what is staged.
+	if err := r.Unstage(ctx, []string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ = r.Status(ctx); len(st.Files) != 1 || st.Files[0].Staged {
+		t.Fatalf("after unstage: %+v", st.Files)
+	}
+	write("c.txt", "c\n")
+	if err := r.Stage(ctx, []string{"c.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Commit(ctx, "c"); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ = r.Status(ctx); len(st.Files) != 1 || st.Files[0].Path != "a.txt" {
+		t.Fatalf("after partial commit: %+v", st.Files)
 	}
 }

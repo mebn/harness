@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bot, Check, ChevronDown, FilePen, ListTodo, Search, ShieldOff, Sparkle, Star, Zap } from "lucide-react";
+import { Bot, Check, ChevronDown, FilePen, ListTodo, Search, ShieldOff, ShieldQuestion, Sparkle, Star, Zap } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import type { Option, ProviderInfo, Session } from "@/lib/backend";
 import { isMac } from "@/lib/shortcuts";
@@ -90,6 +90,7 @@ function Kbd({ children }: { children: ReactNode }) {
 function ModeIcon({ mode, className }: { mode: string; className?: string }) {
   if (mode === "plan") return <ListTodo className={className} />;
   if (mode === "edits") return <FilePen className={className} />;
+  if (mode === "ask") return <ShieldQuestion className={className} />;
   return <ShieldOff className={className} />;
 }
 

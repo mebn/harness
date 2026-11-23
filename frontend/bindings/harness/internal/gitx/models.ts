@@ -21,16 +21,18 @@ export interface Branch {
 }
 
 /**
- * File is one changed path in the working tree.
+ * File is one changed path, either in the index (Staged) or in the working tree. A path
+ * with both staged and unstaged edits appears twice, once each way.
  */
 export interface File {
     "path": string;
     "oldPath"?: string;
 
     /**
-     * "M" modified, "A" added, "D" deleted, "R" renamed, "?" untracked
+     * "M" modified, "A" added, "D" deleted, "R" renamed, "?" untracked, "!" conflicted
      */
     "status": string;
+    "staged": boolean;
     "added": number;
     "removed": number;
     "binary": boolean;

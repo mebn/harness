@@ -27,9 +27,7 @@ func (SystemService) Info() SystemInfo {
 // Activity reports active agent turns and open terminals. A plain function rather than a
 // method so it isn't exposed to the frontend.
 func Activity(c *ChatService, t *TerminalService) (runs, terminals int) {
-	c.mu.Lock()
-	runs = len(c.runs)
-	c.mu.Unlock()
+	runs = c.activity()
 	t.mu.Lock()
 	terminals = len(t.terms)
 	t.mu.Unlock()

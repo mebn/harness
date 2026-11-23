@@ -44,6 +44,8 @@ export type ShortcutId =
   | "prevGroup"
   | "renameGroup"
   | "search"
+  | "findFile"
+  | "findInFiles"
   | "toggleSidebar"
   | "settings"
   | "shortcuts"
@@ -133,7 +135,9 @@ export const SHORTCUTS: Shortcut[] = [
     combos: [key("Digit0", { mod: true }), key("Numpad0", { mod: true })],
   },
 
-  { id: "search", section: "App", label: "Search", combos: [key("KeyK", { mod: true })] },
+  { id: "search", section: "App", label: "Actions and chats", combos: [key("KeyK", { mod: true })] },
+  { id: "findFile", section: "App", label: "Go to file", combos: [key("KeyF", { mod: true })] },
+  { id: "findInFiles", section: "App", label: "Search in files", combos: [key("KeyF", { mod: true, shift: true })] },
   { id: "toggleSidebar", section: "App", label: "Toggle sidebar", combos: [isMac ? { meta: true, code: "KeyB" } : { ctrl: true, code: "KeyB" }] },
   { id: "settings", section: "App", label: "Settings", combos: [key("Comma", { mod: true })] },
   { id: "shortcuts", section: "App", label: "Keyboard shortcuts", combos: [{ code: "F1" }] },

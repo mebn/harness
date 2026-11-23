@@ -20,10 +20,21 @@ export {
 
 export type {
     AttachmentInput,
+    ChatPending,
     ChatQueue,
     ChatStatus,
+    ChatTasks,
+    ClaudeChat,
     FileEntry,
+    ForkResult,
+    PendingRequest,
+    PermissionAnswer,
     QueuedMessage,
+    RewindResult,
+    SearchFile,
+    SearchMatch,
+    SearchOptions,
+    SearchResult,
     SystemInfo,
     TermData,
     TermExit

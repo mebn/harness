@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder, FolderPlus, Keyboard, MessageSquare, MessagesSquare, Plus, Settings, SunMoon, type LucideIcon } from "lucide-react";
+import { File, FileSearch, Folder, FolderPlus, Keyboard, MessageSquare, MessagesSquare, Plus, Settings, SunMoon, type LucideIcon } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -23,7 +23,7 @@ type Action = { id: string; label: string; icon: LucideIcon; keys?: string; run:
 
 const matches = (text: string, q: string) => text.toLowerCase().includes(q);
 
-/** Ctrl/Cmd+K palette: searches workspaces, chats, message text and actions. */
+/** Ctrl/Cmd+K panel: actions, plus workspaces, chats and message text to jump to. */
 export function SearchDialog() {
   const open = useLayout((s) => s.searchOpen);
   const setOpen = useLayout((s) => s.setSearchOpen);
@@ -40,7 +40,7 @@ export function SearchDialog() {
         <DialogDescription className="sr-only">Search workspaces, chats and messages</DialogDescription>
         {/* Filtering is done here, so cmdk's own fuzzy filter is off. */}
         <Command shouldFilter={false} className="[&_[cmdk-group-heading]]:text-muted-foreground">
-          <CommandInput value={query} onValueChange={setQuery} placeholder="Search…" />
+          <CommandInput value={query} onValueChange={setQuery} placeholder="Run an action, or find a workspace or chat…" />
           <CommandList className="max-h-[min(60vh,420px)]">
             <Results query={query.trim().toLowerCase()} close={() => setOpen(false)} />
           </CommandList>
@@ -161,6 +161,14 @@ function useActions(close: () => void): Action[] {
             icon: Plus,
             keys: shortcutLabel("newGroup"),
             run: run(() => void newGroup(project.id)),
+          },
+          { id: "find-file", label: "Go to file", icon: File, keys: shortcutLabel("findFile"), run: run(() => useLayout.getState().setFileSearch("files")) },
+          {
+            id: "find-in-files",
+            label: "Search in files",
+            icon: FileSearch,
+            keys: shortcutLabel("findInFiles"),
+            run: run(() => useLayout.getState().setFileSearch("text")),
           },
         ]
       : []),

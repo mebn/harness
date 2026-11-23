@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Columns2, Maximize2, Minimize2, Plus, RotateCw, Rows2, ShieldCheck, ShieldOff, X } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,7 +25,7 @@ import {
   type Tab,
   type TabKind,
 } from "@/lib/layout-tree";
-import { shortcutLabel, type ShortcutId } from "@/lib/shortcuts";
+import { shortcutLabel } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useDrag, type Drag, type DragTarget, type FrozenGeometry } from "@/stores/drag-store";
 import { useApp } from "@/stores/app-store";
@@ -45,13 +45,23 @@ const EDGE_ZONE = 0.25;
 type Ctx = {
   group: Group;
   /** Starts tracking a press that becomes a drag once the pointer moves. */
-  press: (e: React.PointerEvent, payload: Payload, label: string, icon: TabKind | null) => void;
+  press: Press;
   /** The payload being dragged out of this group, if any. */
   dragging: Payload | null;
 };
 
 const GroupCtx = createContext<Ctx | null>(null);
 const useGroupCtx = () => useContext(GroupCtx)!;
+
+type Press = (e: React.PointerEvent, payload: Payload, label: string, icon: TabKind | null, onDrop?: () => void) => void;
+
+const pressers = new Map<string, Press>();
+
+/**
+ * Starts dragging something into a group's layout from inside one of its tabs, such as a file
+ * from the explorer becoming a tab of its own. Below the drag threshold it stays a click.
+ */
+export const pressIntoGroup = (groupId: string, ...args: Parameters<Press>) => pressers.get(groupId)?.(...args);
 
 /**
  * One group: its windows laid out from the split tree with absolute positions, and every tab's
@@ -113,7 +123,7 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
   }, [focusNonce, active]);
 
   const press = useCallback(
-    (e: React.PointerEvent, payload: Payload, label: string, icon: TabKind | null) => {
+    (e: React.PointerEvent, payload: Payload, label: string, icon: TabKind | null, onDrop?: () => void) => {
       if (e.button !== 0) return;
       const sx = e.clientX;
       const sy = e.clientY;
@@ -125,7 +135,7 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
           if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_THRESHOLD) return;
           started = true;
           const geometry = freeze(container.current, rectsRef.current);
-          store.start({ groupId: group.id, projectId: group.projectId, payload, label, icon, geometry }, ev.clientX, ev.clientY);
+          store.start({ groupId: group.id, projectId: group.projectId, payload, label, icon, geometry, onDrop }, ev.clientX, ev.clientY);
         }
         const d = useDrag.getState().drag;
         if (d) useDrag.getState().move(ev.clientX, ev.clientY, hitTest(ev.clientX, ev.clientY, d));
@@ -152,6 +162,14 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
     },
     [group.id, group.projectId],
   );
+
+  // Tab content (the file explorer) starts drags into this group through the registry.
+  useEffect(() => {
+    pressers.set(group.id, press);
+    return () => {
+      if (pressers.get(group.id) === press) pressers.delete(group.id);
+    };
+  }, [group.id, press]);
 
   // The drag start reads the rects that are on screen at that moment.
   const rectsRef = useRef(rects);
@@ -394,19 +412,22 @@ function PaneFrame({ pane, rect, size, hidden }: { pane: PaneNode; rect: Rect | 
 
 function PaneHeader({ pane }: { pane: PaneNode }) {
   const { group, press } = useGroupCtx();
-  const hovered = useTabLayer((st) => (st.hovered?.groupId === group.id ? st.hovered.paneId : null));
   const store = useGroups.getState();
-  const isMaximized = group.maximized === pane.id;
   const single = pane.tabs.length === 1;
   const activeTab = pane.tabs.find((t) => t.id === pane.active);
   const windowLabel = useTabLabel(activeTab ?? { id: "", kind: "chat" });
-  // Header actions only show on the focused or hovered window.
-  const showActions = group.focused === pane.id || hovered === pane.id;
+  // Right-clicking the header's empty space opens the window menu at the pointer.
+  const [menuAt, setMenuAt] = useState<number | null>(null);
 
   return (
     <div
-      className="flex shrink-0 items-center gap-1 pr-1.5 pl-2"
+      className="relative flex shrink-0 items-center gap-1 pr-1.5 pl-2"
       style={{ height: HEADER }}
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest("[role=tab]")) return;
+        e.preventDefault();
+        setMenuAt(e.clientX - e.currentTarget.getBoundingClientRect().left);
+      }}
       // Grabbing the header's empty space drags the whole window.
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest("[role=tab], button")) return;
@@ -423,25 +444,48 @@ function PaneHeader({ pane }: { pane: PaneNode }) {
         ))}
         <AddTabButton onClick={() => void store.addTab(group.id, pane.id)} />
       </div>
-      <div className={cn("flex items-center transition-opacity duration-150", !showActions && "pointer-events-none opacity-0")}>
-        <HeaderButton label="Split right" shortcut="splitRight" onClick={() => void store.split(group.id, pane.id, "right")}>
-          <Columns2 />
-        </HeaderButton>
-        <HeaderButton label="Split down" shortcut="splitDown" onClick={() => void store.split(group.id, pane.id, "bottom")}>
-          <Rows2 />
-        </HeaderButton>
-        <HeaderButton
-          label={isMaximized ? "Restore" : "Maximize"}
-          shortcut="maximize"
-          onClick={() => store.toggleMaximize(group.id, pane.id)}
+      <DropdownMenu open={menuAt !== null} onOpenChange={(o) => !o && setMenuAt(null)}>
+        <DropdownMenuTrigger asChild>
+          <span aria-hidden className="pointer-events-none absolute bottom-1 h-0 w-0" style={{ left: menuAt ?? 0 }} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="w-56"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
-          {isMaximized ? <Minimize2 /> : <Maximize2 />}
-        </HeaderButton>
-        <HeaderButton label="Close window" shortcut="closeWindow" onClick={() => store.closePane(group.id, pane.id)}>
-          <X />
-        </HeaderButton>
-      </div>
+          <WindowMenuItems paneId={pane.id} />
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
+  );
+}
+
+/** Split, maximize and close for a window; in the header's and every tab's right-click menu. */
+function WindowMenuItems({ paneId }: { paneId: string }) {
+  const { group } = useGroupCtx();
+  const store = useGroups.getState();
+  const isMaximized = group.maximized === paneId;
+  return (
+    <>
+      <DropdownMenuItem onSelect={() => void store.split(group.id, paneId, "right")}>
+        <Columns2 /> Split right
+        <DropdownMenuShortcut>{shortcutLabel("splitRight")}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void store.split(group.id, paneId, "bottom")}>
+        <Rows2 /> Split down
+        <DropdownMenuShortcut>{shortcutLabel("splitDown")}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => store.toggleMaximize(group.id, paneId)}>
+        {isMaximized ? <Minimize2 /> : <Maximize2 />} {isMaximized ? "Restore" : "Maximize"}
+        <DropdownMenuShortcut>{shortcutLabel("maximize")}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => store.closePane(group.id, paneId)}>
+        <X /> Close window
+        <DropdownMenuShortcut>{shortcutLabel("closeWindow")}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+    </>
   );
 }
 
@@ -499,7 +543,7 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
   );
 }
 
-/** A tab's right-click menu; terminals can restart, as administrator on Windows. */
+/** A tab's right-click menu: terminal restarts (as administrator on Windows), then the window's actions. */
 function TabMenu({ tab, open, onOpenChange }: { tab: Tab; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { group } = useGroupCtx();
   const elevatable = useApp((s) => {
@@ -507,6 +551,7 @@ function TabMenu({ tab, open, onOpenChange }: { tab: Tab; open: boolean; onOpenC
     return !!project && canElevate(project, s.system.os);
   });
   const store = useGroups.getState();
+  const paneId = panesOf(group.root).find((p) => p.tabs.some((t) => t.id === tab.id))?.id;
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       {/* Anchors the menu under the tab; the tab itself handles clicks and drags. */}
@@ -542,6 +587,12 @@ function TabMenu({ tab, open, onOpenChange }: { tab: Tab; open: boolean; onOpenC
           <X /> Close tab
           <DropdownMenuShortcut>{shortcutLabel("closeTab")}</DropdownMenuShortcut>
         </DropdownMenuItem>
+        {paneId && (
+          <>
+            <DropdownMenuSeparator />
+            <WindowMenuItems paneId={paneId} />
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -560,35 +611,6 @@ function AddTabButton({ onClick }: { onClick: () => void }) {
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">New tab ({shortcutLabel("newTab")})</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function HeaderButton({
-  label,
-  shortcut,
-  onClick,
-  children,
-}: {
-  label: string;
-  shortcut: ShortcutId;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          aria-label={label}
-          onClick={onClick}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-foreground/[0.06] hover:text-foreground [&_svg]:size-4"
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {label} <span className="ml-1 opacity-60">{shortcutLabel(shortcut)}</span>
-      </TooltipContent>
     </Tooltip>
   );
 }

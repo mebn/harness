@@ -1,4 +1,5 @@
 import type { Session } from "@/lib/backend";
+import { useApp } from "@/stores/app-store";
 
 /** What the sidebar shows for a session or folder. */
 export type ActivityState = "working" | "error" | "waiting" | "finished" | "idle";
@@ -8,12 +9,20 @@ const PRIORITY: Record<ActivityState, number> = { idle: 0, finished: 1, waiting:
 
 /**
  * working:  agent is running
- * waiting:  turn ended with a question for you, not seen yet
+ * waiting:  the agent waits for your permission or answer, or its turn ended with a
+ *           question you haven't seen yet
  * finished: turn completed, not seen yet
  * error:    turn failed, not seen yet
  * idle:     nothing new
  */
-export function sessionState(s: Session, running: boolean, seenAt: number | undefined): ActivityState {
+export function sessionState(
+  s: Session,
+  running: boolean,
+  seenAt: number | undefined,
+  // Read from the store so every caller shows prompts; their selectors re-run on store changes.
+  pending: boolean = (useApp.getState().pending[s.id]?.length ?? 0) > 0,
+): ActivityState {
+  if (pending) return "waiting";
   if (running) return "working";
   const unseen = seenAt === undefined || s.updatedAt > seenAt;
   if (!unseen) return "idle";

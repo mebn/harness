@@ -71,7 +71,7 @@ func main() {
 		Description: "Runs Harness sessions in the background",
 		Services: []application.Service{
 			application.NewService(&services.SystemService{}),
-			application.NewService(services.NewProjectService(db, providers, files)),
+			application.NewService(services.NewProjectService(db, providers, files, chat)),
 			application.NewService(chat),
 			application.NewService(usageSvc),
 			application.NewService(services.NewFileService(db)),

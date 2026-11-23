@@ -3,6 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { WindowControls } from "@/components/layout/window-controls";
 import { DragOverlay } from "@/components/workspace/drag-overlay";
 import { SearchDialog } from "@/components/search/search-dialog";
+import { FileSearchDialog } from "@/components/search/file-search";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useBackendEvents } from "@/hooks/use-backend-events";
@@ -41,6 +42,7 @@ export default function App() {
       <AppShell />
       <WindowControls />
       <SearchDialog />
+      <FileSearchDialog />
       <SettingsDialog open={settingsOpen} onOpenChange={(open) => setSettingsOpen(open)} initial={settingsCategory} />
       <Notice />
       <DragOverlay />

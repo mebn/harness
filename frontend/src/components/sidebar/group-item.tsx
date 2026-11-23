@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { GitBranch, MoreHorizontal } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ import { useLayout } from "@/stores/layout-store";
 import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
 
-/** A group in the sidebar: its name, activity, and how many tabs it holds. */
+/** A group in the sidebar: name, activity and last use on top, window and tab counts below. */
 type Props = {
   group: Group;
   /** Being dragged to a new position. */
@@ -50,6 +50,10 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
   const title = useGroupTitle(group);
   const tabs = tabsOf(group.root);
   const windowCount = panesOf(group.root).length;
+  // Second line: "1 window", or "2 windows · 5 tabs" when windows hold several tabs.
+  const summary =
+    `${windowCount} ${windowCount === 1 ? "window" : "windows"}` +
+    (tabs.length > windowCount ? ` · ${tabs.length} tabs` : "");
   const chats = tabs.filter((t) => t.kind === "chat" && t.sessionId);
   // The group shows the most urgent state among its chats.
   const state = useApp((s) =>
@@ -101,62 +105,63 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
         }}
         onDoubleClick={() => setEditing(true)}
         className={cn(
-          "group flex h-7 cursor-default items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          "group flex cursor-default rounded-lg px-2 py-1.5 text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           active && "bg-sidebar-accent text-sidebar-accent-foreground",
           dropTarget && "bg-ring/15 text-foreground ring-1 ring-ring/60",
         )}
       >
-        {/* Fixed-width slot keeps titles aligned when activity shows. */}
-        <span className="flex size-3.5 shrink-0 items-center justify-center">
-          <ActivityIndicator state={state} />
-        </span>
-        {editing ? (
-          <InlineEdit
-            value={title}
-            onSubmit={(v) => {
-              stopEditing();
-              rename(v);
-            }}
-            onCancel={stopEditing}
-          />
-        ) : (
-          <span className={cn("flex-1 truncate", STATE_TEXT[state])}>{title}</span>
-        )}
-        {group.worktree && !editing && (
-          <span title={`Worktree: ${group.worktree}`} className="max-w-24 shrink-0 truncate text-[10px] text-muted-foreground">
-            {group.worktree}
-          </span>
-        )}
-        {tabs.length > 1 && number === 0 && (
-          <span
-            title={`${windowCount} ${windowCount === 1 ? "window" : "windows"} · ${tabs.length} tabs`}
-            className="min-w-4 shrink-0 rounded bg-foreground/[0.07] px-1 text-center text-[10px] font-medium tabular-nums text-muted-foreground"
-          >
-            {tabs.length}
-          </span>
-        )}
-        {number > 0 ? (
-          <kbd className="rounded border bg-background/70 px-1 font-sans text-[10px] text-muted-foreground">{number}</kbd>
-        ) : (
-          <HoverSwap idle={timeAgo(lastActive, now)}>
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button aria-label="Group options" className="rounded p-0.5 hover:text-foreground">
-                  <MoreHorizontal className="size-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem onSelect={() => setEditing(true)}>
-                  Rename
-                  <DropdownMenuShortcut>{shortcutLabel("renameGroup")}</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => closeGroup(group.id)}>
-                  Close group
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </HoverSwap>
-        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex h-5 items-center gap-1.5">
+            {editing ? (
+              <InlineEdit
+                value={title}
+                onSubmit={(v) => {
+                  stopEditing();
+                  rename(v);
+                }}
+                onCancel={stopEditing}
+              />
+            ) : (
+              <span className={cn("flex-1 truncate", STATE_TEXT[state])}>{title}</span>
+            )}
+            {/* Activity sits on the right so titles stay flush with the workspace header. */}
+            <ActivityIndicator state={state} />
+            {number > 0 ? (
+              <kbd className="rounded border bg-background/70 px-1 font-sans text-[10px] text-muted-foreground">{number}</kbd>
+            ) : (
+              <HoverSwap idle={timeAgo(lastActive, now)}>
+                <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                    <button aria-label="Group options" className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                      <MoreHorizontal className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem onSelect={() => setEditing(true)}>
+                      Rename
+                      <DropdownMenuShortcut>{shortcutLabel("renameGroup")}</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => closeGroup(group.id)}>
+                      Close group
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </HoverSwap>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground/80">
+            <span className="shrink-0">{summary}</span>
+            {group.worktree && (
+              <>
+                <span aria-hidden>·</span>
+                <span title={`Worktree: ${group.worktree}`} className="flex min-w-0 items-center gap-0.5">
+                  <GitBranch className="size-3 shrink-0" />
+                  <span className="truncate">{group.worktree}</span>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

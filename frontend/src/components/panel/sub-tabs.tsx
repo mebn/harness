@@ -18,10 +18,12 @@ type Props = {
   onClose?: (id: string) => void;
   onAdd?: () => void;
   addLabel?: string;
+  /** Lets a tab be pressed to start a drag (e.g. a file dragged out into its own tab). */
+  onTabPointerDown?: (id: string, e: React.PointerEvent) => void;
 };
 
 /** Secondary tab strip inside a panel (files, terminals, browser pages). */
-export function SubTabBar({ tabs, active, onSelect, onClose, onAdd, addLabel = "New tab" }: Props) {
+export function SubTabBar({ tabs, active, onSelect, onClose, onAdd, addLabel = "New tab", onTabPointerDown }: Props) {
   return (
     <div className="flex h-8 shrink-0 items-center gap-0.5 border-b px-1">
       <div role="tablist" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
@@ -34,6 +36,7 @@ export function SubTabBar({ tabs, active, onSelect, onClose, onAdd, addLabel = "
               aria-selected={selected}
               title={t.title ?? t.label}
               onClick={() => onSelect(t.id)}
+              onPointerDown={onTabPointerDown && ((e) => onTabPointerDown(t.id, e))}
               onAuxClick={(e) => e.button === 1 && t.closable && onClose?.(t.id)}
               className={cn(
                 "group flex h-6 max-w-40 shrink-0 cursor-default items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground",

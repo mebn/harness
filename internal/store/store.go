@@ -99,6 +99,11 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN fast_off_reason TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN turn_provider TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN turn_model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN fork_from TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN resume_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN last_uuid TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN cli_uuid TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN prev_uuid TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
@@ -171,13 +176,13 @@ func (s *Store) DeleteProject(id string) error {
 
 // ---- sessions ----
 
-const sessionCols = `id, project_id, title, provider, model, effort, mode, worktree, provider_session_id, started, last_status, context_tokens, context_window, fast, fast_state, fast_off_reason, turn_provider, turn_model, created_at, updated_at`
+const sessionCols = `id, project_id, title, provider, model, effort, mode, worktree, provider_session_id, started, last_status, context_tokens, context_window, fast, fast_state, fast_off_reason, turn_provider, turn_model, fork_from, resume_at, last_uuid, created_at, updated_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	var x Session
 	err := sc.Scan(&x.ID, &x.ProjectID, &x.Title, &x.Provider, &x.Model, &x.Effort, &x.Mode, &x.Worktree,
 		&x.ProviderSessionID, &x.Started, &x.LastStatus, &x.ContextTokens, &x.ContextWindow, &x.Fast, &x.FastState, &x.FastOffReason,
-		&x.TurnProvider, &x.TurnModel, &x.CreatedAt, &x.UpdatedAt)
+		&x.TurnProvider, &x.TurnModel, &x.ForkFrom, &x.ResumeAt, &x.LastUUID, &x.CreatedAt, &x.UpdatedAt)
 	return x, err
 }
 
@@ -217,9 +222,10 @@ func (s *Store) LatestSession() (Session, bool) {
 
 func (s *Store) InsertSession(x *Session) error {
 	x.CreatedAt, x.UpdatedAt = now(), now()
-	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		x.ID, x.ProjectID, x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus,
-		x.ContextTokens, x.ContextWindow, x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel, x.CreatedAt, x.UpdatedAt)
+		x.ContextTokens, x.ContextWindow, x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel,
+		x.ForkFrom, x.ResumeAt, x.LastUUID, x.CreatedAt, x.UpdatedAt)
 	return err
 }
 
@@ -227,9 +233,10 @@ func (s *Store) UpdateSession(x *Session) error {
 	x.UpdatedAt = now()
 	_, err := s.db.Exec(`UPDATE sessions SET title = ?, provider = ?, model = ?, effort = ?, mode = ?, worktree = ?,
 		provider_session_id = ?, started = ?, last_status = ?, context_tokens = ?, context_window = ?,
-		fast = ?, fast_state = ?, fast_off_reason = ?, turn_provider = ?, turn_model = ?, updated_at = ? WHERE id = ?`,
+		fast = ?, fast_state = ?, fast_off_reason = ?, turn_provider = ?, turn_model = ?,
+		fork_from = ?, resume_at = ?, last_uuid = ?, updated_at = ? WHERE id = ?`,
 		x.Title, x.Provider, x.Model, x.Effort, x.Mode, x.Worktree, x.ProviderSessionID, x.Started, x.LastStatus, x.ContextTokens, x.ContextWindow,
-		x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel, x.UpdatedAt, x.ID)
+		x.Fast, x.FastState, x.FastOffReason, x.TurnProvider, x.TurnModel, x.ForkFrom, x.ResumeAt, x.LastUUID, x.UpdatedAt, x.ID)
 	return err
 }
 
@@ -241,7 +248,7 @@ func (s *Store) DeleteSession(id string) error {
 // ---- messages ----
 
 func (s *Store) Messages(sessionID string) ([]Message, error) {
-	rows, err := s.db.Query(`SELECT id, session_id, role, parts, created_at FROM messages WHERE session_id = ? ORDER BY created_at`, sessionID)
+	rows, err := s.db.Query(`SELECT id, session_id, role, parts, created_at, cli_uuid, prev_uuid FROM messages WHERE session_id = ? ORDER BY created_at`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +257,7 @@ func (s *Store) Messages(sessionID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		var parts string
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &parts, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &parts, &m.CreatedAt, &m.CLIUUID, &m.PrevUUID); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(parts), &m.Parts); err != nil {
@@ -267,9 +274,36 @@ func (s *Store) SaveMessage(m Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO messages (id, session_id, role, parts, created_at) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET parts = excluded.parts`,
-		m.ID, m.SessionID, m.Role, string(parts), m.CreatedAt)
+	_, err = s.db.Exec(`INSERT INTO messages (id, session_id, role, parts, created_at, cli_uuid, prev_uuid) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET parts = excluded.parts, cli_uuid = excluded.cli_uuid, prev_uuid = excluded.prev_uuid`,
+		m.ID, m.SessionID, m.Role, string(parts), m.CreatedAt, m.CLIUUID, m.PrevUUID)
+	return err
+}
+
+// Message returns one message.
+func (s *Store) Message(id string) (Message, error) {
+	var m Message
+	var parts string
+	err := s.db.QueryRow(`SELECT id, session_id, role, parts, created_at, cli_uuid, prev_uuid FROM messages WHERE id = ?`, id).
+		Scan(&m.ID, &m.SessionID, &m.Role, &parts, &m.CreatedAt, &m.CLIUUID, &m.PrevUUID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, ErrNotFound
+	}
+	if err == nil && json.Unmarshal([]byte(parts), &m.Parts) != nil {
+		m.Parts = []Part{}
+	}
+	return m, err
+}
+
+// SetMessageUUIDs records a user message's place in the provider's conversation.
+func (s *Store) SetMessageUUIDs(id, cliUUID, prevUUID string) error {
+	_, err := s.db.Exec(`UPDATE messages SET cli_uuid = ?, prev_uuid = ? WHERE id = ?`, cliUUID, prevUUID, id)
+	return err
+}
+
+// DeleteMessagesFrom removes a session's messages from the given one on (rewinding the chat).
+func (s *Store) DeleteMessagesFrom(sessionID string, m Message) error {
+	_, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ? AND (created_at > ? OR id = ?)`, sessionID, m.CreatedAt, m.ID)
 	return err
 }
 

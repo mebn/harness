@@ -6,6 +6,10 @@ const (
 	EventChatMessage    = "chat:message"
 	EventChatStatus     = "chat:status"
 	EventChatQueue      = "chat:queue"
+	EventChatPending    = "chat:pending"  // permission requests waiting for an answer
+	EventChatTasks      = "chat:tasks"    // background tasks running
+	EventChatCommands   = "chat:commands" // slash commands available
+	EventChatReload     = "chat:reload"   // a chat's messages changed wholesale (rewind)
 	EventSessionUpdated = "session:updated"
 	EventTermData       = "term:data"
 	EventTermExit       = "term:exit"

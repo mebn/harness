@@ -24,11 +24,13 @@ const (
 	maxDiffBytes = 512 * 1024
 )
 
-// File is one changed path in the working tree.
+// File is one changed path, either in the index (Staged) or in the working tree. A path
+// with both staged and unstaged edits appears twice, once each way.
 type File struct {
 	Path    string `json:"path"`
 	OldPath string `json:"oldPath,omitempty"`
-	Status  string `json:"status"` // "M" modified, "A" added, "D" deleted, "R" renamed, "?" untracked
+	Status  string `json:"status"` // "M" modified, "A" added, "D" deleted, "R" renamed, "?" untracked, "!" conflicted
+	Staged  bool   `json:"staged"`
 	Added   int    `json:"added"`
 	Removed int    `json:"removed"`
 	Binary  bool   `json:"binary"`
@@ -85,9 +87,13 @@ func (r Repo) Status(ctx context.Context) (Status, error) {
 	prefixOut, _ := r.run(ctx, readTimeout, "rev-parse", "--show-prefix")
 	prefix := strings.TrimSpace(string(prefixOut))
 
-	counts := r.numstat(ctx)
+	staged, unstaged := r.numstat(ctx)
 	kept := make([]File, 0, len(files))
 	for _, f := range files {
+		counts := unstaged
+		if f.Staged {
+			counts = staged
+		}
 		c, hasCount := counts[f.Path]
 		if !strings.HasPrefix(f.Path, prefix) {
 			continue // outside this workspace
@@ -101,12 +107,13 @@ func (r Repo) Status(ctx context.Context) (Status, error) {
 		}
 		kept = append(kept, f)
 	}
-	sort.Slice(kept, func(i, j int) bool { return kept[i].Path < kept[j].Path })
+	sort.SliceStable(kept,func(i, j int) bool { return kept[i].Path < kept[j].Path })
 	st.Files = kept
 	return st, nil
 }
 
-// parseStatus parses `git status --porcelain=v1 --branch -z`.
+// parseStatus parses `git status --porcelain=v1 --branch -z`. X is the index column and
+// Y the working tree, so "MM" yields a staged and an unstaged entry for the same path.
 func parseStatus(out []byte, st *Status) []File {
 	entries := strings.Split(string(out), "\x00")
 	files := []File{}
@@ -120,27 +127,45 @@ func parseStatus(out []byte, st *Status) []File {
 			continue
 		}
 		x, y, path := e[0], e[1], e[3:]
-		f := File{Path: path, Status: statusLetter(x, y)}
+		oldPath := ""
 		if x == 'R' || x == 'C' {
 			i++ // the next entry is the original path
 			if i < len(entries) {
-				f.OldPath = entries[i]
+				oldPath = entries[i]
 			}
 		}
-		files = append(files, f)
+		switch {
+		case x == '?' && y == '?':
+			files = append(files, File{Path: path, Status: "?"})
+		case conflicted(x, y):
+			files = append(files, File{Path: path, Status: "!"})
+		default:
+			if x != ' ' {
+				f := File{Path: path, Status: statusLetter(x), Staged: true}
+				if x == 'R' {
+					f.OldPath = oldPath
+				}
+				files = append(files, f)
+			}
+			if y != ' ' {
+				files = append(files, File{Path: path, Status: statusLetter(y)})
+			}
+		}
 	}
 	return files
 }
 
-func statusLetter(x, y byte) string {
-	switch {
-	case x == '?' && y == '?':
-		return "?"
-	case x == 'R' || y == 'R':
+func conflicted(x, y byte) bool {
+	return x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D')
+}
+
+func statusLetter(c byte) string {
+	switch c {
+	case 'R':
 		return "R"
-	case x == 'A' || y == 'A':
+	case 'A', 'C':
 		return "A"
-	case x == 'D' || y == 'D':
+	case 'D':
 		return "D"
 	default:
 		return "M"
@@ -170,16 +195,15 @@ type count struct {
 	Binary         bool
 }
 
-// numstat returns line counts of staged+unstaged changes against HEAD.
-func (r Repo) numstat(ctx context.Context) map[string]count {
-	counts := map[string]count{}
-	out, err := r.run(ctx, readTimeout, "diff", "HEAD", "--numstat", "-z", "-M")
-	if err != nil {
-		// No commits yet: compare the index against the empty tree instead.
-		out, _ = r.run(ctx, readTimeout, "diff", "--cached", "--numstat", "-z")
-	}
-	parseNumstat(out, counts)
-	return counts
+// numstat returns line counts of staged changes (index vs HEAD) and unstaged ones
+// (working tree vs index).
+func (r Repo) numstat(ctx context.Context) (staged, unstaged map[string]count) {
+	staged, unstaged = map[string]count{}, map[string]count{}
+	out, _ := r.run(ctx, readTimeout, "diff", "--cached", "--numstat", "-z", "-M")
+	parseNumstat(out, staged)
+	out, _ = r.run(ctx, readTimeout, "diff", "--numstat", "-z")
+	parseNumstat(out, unstaged)
+	return staged, unstaged
 }
 
 // parseNumstat parses `--numstat -z`; renames are "a\tr\t\0old\0new\0".
@@ -218,7 +242,8 @@ func (r Repo) countLines(rel string) (int, bool) {
 	return n, false
 }
 
-// Diff returns a unified diff of one file against HEAD (untracked files show as all-added).
+// Diff returns a unified diff of one entry: staged ones against HEAD, unstaged ones against
+// the index (untracked files show as all-added).
 func (r Repo) Diff(ctx context.Context, f File) (string, error) {
 	if f.Status == "?" {
 		data, err := os.ReadFile(filepath.Join(r.Dir, filepath.FromSlash(f.Path)))
@@ -236,30 +261,86 @@ func (r Repo) Diff(ctx context.Context, f File) (string, error) {
 		}
 		return sb.String(), nil
 	}
-	args := []string{"diff", "HEAD", "-M", "--"}
+	args := []string{"diff"}
+	if f.Staged {
+		args = append(args, "--cached", "-M")
+	}
+	args = append(args, "--")
 	if f.OldPath != "" {
 		args = append(args, f.OldPath)
 	}
 	out, err := r.run(ctx, readTimeout, append(args, f.Path)...)
-	if err != nil {
-		out, err = r.run(ctx, readTimeout, "diff", "--cached", "--", f.Path)
-	}
 	if len(out) > maxDiffBytes {
 		out = append(out[:maxDiffBytes], []byte("\n… (truncated)")...)
 	}
 	return string(out), err
 }
 
-// CommitAll stages every change and commits it.
-func (r Repo) CommitAll(ctx context.Context, message string) error {
+// Commit commits what is staged; with nothing staged it stages every change first.
+func (r Repo) Commit(ctx context.Context, message string) error {
 	if strings.TrimSpace(message) == "" {
 		return errors.New("commit message is required")
 	}
-	if _, err := r.run(ctx, writeTimeout, "add", "-A"); err != nil {
-		return err
+	if _, err := r.run(ctx, readTimeout, "diff", "--cached", "--quiet"); err == nil {
+		// Exit 0 means nothing is staged.
+		if _, err := r.run(ctx, writeTimeout, "add", "-A"); err != nil {
+			return err
+		}
 	}
 	_, err := r.run(ctx, writeTimeout, "commit", "-m", message)
 	return err
+}
+
+// pathspec ends a git command with paths, relative to Dir like the ones Status reports.
+// No paths means every change under Dir.
+func pathspec(paths []string) []string {
+	if len(paths) == 0 {
+		return []string{"--", "."}
+	}
+	return append([]string{"--"}, paths...)
+}
+
+// Stage adds paths (new, modified or deleted) to the index.
+func (r Repo) Stage(ctx context.Context, paths []string) error {
+	_, err := r.run(ctx, writeTimeout, append([]string{"add", "-A"}, pathspec(paths)...)...)
+	return err
+}
+
+// Unstage moves staged changes of paths back to the working tree, keeping the edits.
+func (r Repo) Unstage(ctx context.Context, paths []string) error {
+	if _, err := r.run(ctx, readTimeout, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+		// No commits yet: there is no HEAD to restore from, so drop paths from the index.
+		_, err := r.run(ctx, writeTimeout, append([]string{"rm", "-r", "-q", "--cached", "--ignore-unmatch"}, pathspec(paths)...)...)
+		return err
+	}
+	_, err := r.run(ctx, writeTimeout, append([]string{"restore", "--staged"}, pathspec(paths)...)...)
+	return err
+}
+
+// Discard throws away unstaged changes: tracked files go back to their staged (or committed)
+// content and untracked files are deleted. Staged changes are kept.
+func (r Repo) Discard(ctx context.Context, files []File) error {
+	var tracked, untracked []string
+	for _, f := range files {
+		switch {
+		case f.Staged:
+		case f.Status == "?":
+			untracked = append(untracked, f.Path)
+		default:
+			tracked = append(tracked, f.Path)
+		}
+	}
+	if len(tracked) > 0 {
+		if _, err := r.run(ctx, writeTimeout, append([]string{"restore"}, pathspec(tracked)...)...); err != nil {
+			return err
+		}
+	}
+	if len(untracked) > 0 {
+		if _, err := r.run(ctx, writeTimeout, append([]string{"clean", "-f", "-q"}, pathspec(untracked)...)...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Push pushes the current branch, setting the upstream on first push.
@@ -270,4 +351,23 @@ func (r Repo) Push(ctx context.Context, hasUpstream bool) error {
 	}
 	_, err := r.run(ctx, writeTimeout, args...)
 	return err
+}
+
+// Files lists the files under Dir that git knows about or would add (tracked plus untracked,
+// minus ignored), relative to Dir with forward slashes.
+func (r Repo) Files(ctx context.Context) ([]string, error) {
+	out, err := r.run(ctx, readTimeout, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	files := []string{}
+	for _, p := range strings.Split(string(out), "\x00") {
+		// A file with unmerged stages is listed once per stage.
+		if p != "" && !seen[p] {
+			seen[p] = true
+			files = append(files, p)
+		}
+	}
+	return files, nil
 }

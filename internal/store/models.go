@@ -42,8 +42,14 @@ type Session struct {
 	ContextTokens int64 `json:"contextTokens"`
 	// ContextWindow is the model's context size as last reported (0 if unknown).
 	ContextWindow int64 `json:"contextWindow"`
-	CreatedAt     int64 `json:"createdAt"`
-	UpdatedAt     int64 `json:"updatedAt"`
+	// ForkFrom, when set, makes the next turn start ProviderSessionID as a copy of that
+	// provider session, cut after the entry ResumeAt (a rewind or fork not yet started).
+	ForkFrom string `json:"forkFrom"`
+	ResumeAt string `json:"resumeAt"`
+	// LastUUID is the provider conversation's latest entry.
+	LastUUID  string `json:"lastUuid"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
 }
 
 // ProjectTree is a project with its sessions, used to render the sidebar.
@@ -54,7 +60,7 @@ type ProjectTree struct {
 
 // Part is one block of a message: text or a tool call.
 type Part struct {
-	Type       string `json:"type"` // "text" | "tool" | "error" | "attachment"
+	Type       string `json:"type"` // "text" | "thinking" | "tool" | "error" | "attachment"
 	Text       string `json:"text,omitempty"`
 	ToolID     string `json:"toolId,omitempty"`
 	ToolName   string `json:"toolName,omitempty"`
@@ -72,6 +78,10 @@ type Part struct {
 	// A finished subagent's totals, when the CLI reported them.
 	AgentToolUses int   `json:"agentToolUses,omitempty"`
 	AgentTokens   int64 `json:"agentTokens,omitempty"`
+	// ToolArgs is the tool's full input as JSON (for rich display).
+	ToolArgs string `json:"toolArgs,omitempty"`
+	// Images are URLs of images a tool returned.
+	Images []string `json:"images,omitempty"`
 	// Attachment fields (Type "attachment").
 	FileName string `json:"fileName,omitempty"`
 	FilePath string `json:"filePath,omitempty"`
@@ -86,4 +96,9 @@ type Message struct {
 	Role      string `json:"role"` // "user" | "assistant" | "event" (shown in the chat only, e.g. a model switch)
 	Parts     []Part `json:"parts"`
 	CreatedAt int64  `json:"createdAt"`
+	// Set on user messages the provider took in: the message's id in the provider's
+	// conversation, and the entry before it (where a rewind to this message cuts; "" when
+	// it opened the conversation).
+	CLIUUID  string `json:"cliUuid,omitempty"`
+	PrevUUID string `json:"prevUuid,omitempty"`
 }

@@ -14,6 +14,14 @@ export interface Message {
     "role": string;
     "parts": Part[] | null;
     "createdAt": number;
+
+    /**
+     * Set on user messages the provider took in: the message's id in the provider's
+     * conversation, and the entry before it (where a rewind to this message cuts; "" when
+     * it opened the conversation).
+     */
+    "cliUuid"?: string;
+    "prevUuid"?: string;
 }
 
 /**
@@ -32,7 +40,7 @@ export interface MessageHit {
  */
 export interface Part {
     /**
-     * "text" | "tool" | "error" | "attachment"
+     * "text" | "thinking" | "tool" | "error" | "attachment"
      */
     "type": string;
     "text"?: string;
@@ -64,6 +72,16 @@ export interface Part {
      */
     "agentToolUses"?: number;
     "agentTokens"?: number;
+
+    /**
+     * ToolArgs is the tool's full input as JSON (for rich display).
+     */
+    "toolArgs"?: string;
+
+    /**
+     * Images are URLs of images a tool returned.
+     */
+    "images"?: string[] | null;
 
     /**
      * Attachment fields (Type "attachment").
@@ -153,6 +171,18 @@ export interface Session {
      * ContextWindow is the model's context size as last reported (0 if unknown).
      */
     "contextWindow": number;
+
+    /**
+     * ForkFrom, when set, makes the next turn start ProviderSessionID as a copy of that
+     * provider session, cut after the entry ResumeAt (a rewind or fork not yet started).
+     */
+    "forkFrom": string;
+    "resumeAt": string;
+
+    /**
+     * LastUUID is the provider conversation's latest entry.
+     */
+    "lastUuid": string;
     "createdAt": number;
     "updatedAt": number;
 }

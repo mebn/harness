@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ListPlus, Paperclip, Square } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,10 @@ import { useApp } from "@/stores/app-store";
 import { AttachmentChips } from "./attachment-chips";
 import { LocationPicker } from "./location-picker";
 import { ModelPicker } from "./model-picker";
+import { PermissionPrompt } from "./permission-prompt";
 import { QueueList } from "./queue-list";
+import { SlashMenu, matchCommands, slashQuery } from "./slash-menu";
+import { TaskStrip } from "./task-strip";
 import { UsageIndicator } from "./usage-indicator";
 
 const MAX_HEIGHT = 240;
@@ -28,8 +31,45 @@ export function Composer({ session, visible }: { session: Session; visible: bool
   const steer = useApp((s) => s.steer);
   const stop = useApp((s) => s.stop);
   const update = useApp((s) => s.updateSettings);
+  const draft = useApp((s) => s.drafts[session.id]);
+  const takeDraft = useApp((s) => s.takeDraft);
+  const commands = useApp((s) => s.commands[session.id]);
+  const loadCommands = useApp((s) => s.loadCommands);
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [menuClosed, setMenuClosed] = useState(false);
 
   const provider = providers.find((p) => p.id === session.provider) ?? providers[0];
+
+  // Text handed over by a rewind or fork goes into the input.
+  useEffect(() => {
+    if (draft === undefined) return;
+    const t = takeDraft(session.id);
+    if (t !== undefined) {
+      setText(t);
+      ref.current?.focus();
+    }
+  }, [draft, session.id, takeDraft]);
+
+  // Slash commands: offered while typing "/name".
+  const query = provider?.interactive ? slashQuery(text) : null;
+  const menuOpen = query !== null && !menuClosed;
+  const matches = useMemo(() => (query === null ? [] : matchCommands(commands, query)), [commands, query]);
+  useEffect(() => {
+    if (query !== null && commands === undefined) void loadCommands(session.id).catch(() => {});
+  }, [query !== null, commands, loadCommands, session.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setMenuIndex(0), [query]);
+  useEffect(() => {
+    if (query === null) setMenuClosed(false);
+  }, [query]);
+
+  const pickCommand = (name: string, argumentHint: string) => {
+    if (argumentHint) {
+      setText(`/${name} `);
+      ref.current?.focus();
+    } else {
+      void submit(false, `/${name}`);
+    }
+  };
   // While a turn runs, sending queues the message (Alt+Enter steers it in right away).
   const canSend = text.trim() !== "" || attachments.items.length > 0;
   const error = sendError ?? attachments.error;
@@ -47,9 +87,9 @@ export function Composer({ session, visible }: { session: Session; visible: bool
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
   }, [text]);
 
-  const submit = async (steerNow = false) => {
-    if (!canSend) return;
-    const prompt = text.trim();
+  const submit = async (steerNow = false, override?: string) => {
+    if (!canSend && override === undefined) return;
+    const prompt = (override ?? text).trim();
     const pending = attachments.take();
     setText("");
     setSendError(null);
@@ -73,6 +113,17 @@ export function Composer({ session, visible }: { session: Session; visible: bool
       <div className="mb-1 flex justify-end">
         <UsageIndicator session={session} />
       </div>
+      <PermissionPrompt sessionId={session.id} />
+      <TaskStrip sessionId={session.id} />
+      {menuOpen && (
+        <SlashMenu
+          items={matches}
+          loading={commands === undefined}
+          index={menuIndex}
+          onHover={setMenuIndex}
+          onPick={(c) => pickCommand(c.name, c.argumentHint)}
+        />
+      )}
       <QueueList
         sessionId={session.id}
         onEdit={(t) => {
@@ -106,7 +157,13 @@ export function Composer({ session, visible }: { session: Session; visible: bool
           data-composer
           value={text}
           rows={1}
-          placeholder={running ? `Queue a message… (${isMac ? "⌥" : "Alt+"}↵ to steer)` : "Ask anything…"}
+          placeholder={
+            running
+              ? `Queue a message… (${isMac ? "⌥" : "Alt+"}↵ to steer)`
+              : provider.interactive
+                ? "Ask anything… (/ for commands)"
+                : "Ask anything…"
+          }
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             // Pasted screenshots and copied files become attachments.
@@ -116,6 +173,29 @@ export function Composer({ session, visible }: { session: Session; visible: bool
             }
           }}
           onKeyDown={(e) => {
+            if (menuOpen && matches.length > 0 && !e.nativeEvent.isComposing) {
+              const pick = matches[Math.min(menuIndex, matches.length - 1)];
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const d = e.key === "ArrowDown" ? 1 : -1;
+                setMenuIndex((i) => (i + d + matches.length) % matches.length);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                if (e.key === "Tab") {
+                  setText(`/${pick.name} `);
+                } else {
+                  pickCommand(pick.name, pick.argumentHint);
+                }
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setMenuClosed(true);
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit(e.altKey);

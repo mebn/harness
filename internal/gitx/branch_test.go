@@ -66,7 +66,7 @@ func TestSwitchAndCreateBranch(t *testing.T) {
 		}
 	}
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
-	if err := r.CommitAll(ctx, "init"); err != nil {
+	if err := r.Commit(ctx, "init"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.CreateBranch(ctx, "feat/x"); err != nil {

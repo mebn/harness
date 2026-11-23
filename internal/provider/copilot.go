@@ -37,7 +37,12 @@ func (Copilot) Info() Info {
 	}
 }
 
-func (Copilot) Run(ctx context.Context, req Request) (<-chan Event, error) {
+func (c Copilot) Open(ctx context.Context, req OpenRequest) (Conn, error) {
+	return openTurnConn(ctx, req, c.run), nil
+}
+
+// run runs one turn: the CLI takes a single prompt and exits when done.
+func (Copilot) run(ctx context.Context, req Request) (<-chan Event, error) {
 	// --session-id both creates a new session with that id and resumes an existing one.
 	prompt := req.Prompt
 	var attachArgs []string

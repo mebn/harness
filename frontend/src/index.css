@@ -33,8 +33,8 @@
 
   /* A neutral wash over the OS blur, so all color comes from what is behind the window. */
   --backdrop: oklch(0.98 0 0 / 50%);
-  --pane: oklch(1 0 0 / 80%);
-  --pane-focused: oklch(1 0 0 / 96%);
+  --pane: oklch(0.99 0 0);
+  --pane-focused: oklch(1 0 0);
   --pane-border: oklch(0 0 0 / 12%);
 }
 
@@ -64,8 +64,8 @@
   --sidebar-border: oklch(1 0 0 / 7%);
 
   --backdrop: oklch(0.16 0 0 / 60%);
-  --pane: oklch(0.2 0 0 / 80%);
-  --pane-focused: oklch(0.205 0 0 / 96%);
+  --pane: oklch(0.195 0 0);
+  --pane-focused: oklch(0.205 0 0);
   --pane-border: oklch(1 0 0 / 12%);
 }
 
@@ -147,16 +147,15 @@
 }
 
 /*
- * A window card; the focused one is nearly opaque, the rest let the backdrop through. Windows
- * sit edge to edge, so each draws only its right and bottom border and the group area draws
- * the top and left: every seam is one line.
+ * A window card. Cards are opaque (only the sidebar and title bar show the translucent
+ * backdrop); the focused one is a shade brighter. Windows sit edge to edge, so each draws only
+ * its right and bottom border and the group area draws the top and left: every seam is one line.
  */
 .pane-card {
   border-color: var(--pane-border);
   border-style: solid;
   border-width: 0 1px 1px 0;
   background: var(--pane);
-  backdrop-filter: blur(24px) saturate(1.4);
   /* Contents never spill out, even when the app window is shrunk below the windows' minimum. */
   overflow: hidden;
 }
@@ -226,6 +225,12 @@
 }
 .code-view .shiki .line {
   @apply pr-4;
+}
+/* The line a search result opened. */
+.code-view .shiki .line.line-hit {
+  display: inline-block;
+  min-width: 100%;
+  background: rgb(250 204 21 / 0.18);
 }
 .code-view .shiki .line::before {
   counter-increment: line;

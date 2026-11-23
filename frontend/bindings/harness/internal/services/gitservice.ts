@@ -23,7 +23,7 @@ export function Branches(projectID: string, worktree: string): $CancellablePromi
 }
 
 /**
- * Commit stages all changes and commits them with message.
+ * Commit commits the staged changes, or every change when nothing is staged.
  */
 export function Commit(projectID: string, worktree: string, message: string): $CancellablePromise<void> {
     return $Call.ByID(4147182970, projectID, worktree, message);
@@ -47,8 +47,22 @@ export function Diff(projectID: string, worktree: string, file: gitx$0.File): $C
     return $Call.ByID(1719928896, projectID, worktree, file);
 }
 
+/**
+ * Discard throws away the unstaged changes of files (untracked files are deleted).
+ */
+export function Discard(projectID: string, worktree: string, files: gitx$0.File[] | null): $CancellablePromise<void> {
+    return $Call.ByID(4185028399, projectID, worktree, files);
+}
+
 export function Push(projectID: string, worktree: string): $CancellablePromise<void> {
     return $Call.ByID(2163830679, projectID, worktree);
+}
+
+/**
+ * Stage adds paths to the index; no paths stages every change.
+ */
+export function Stage(projectID: string, worktree: string, paths: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(102090319, projectID, worktree, paths);
 }
 
 export function Status(projectID: string, worktree: string): $CancellablePromise<gitx$0.Status> {
@@ -60,6 +74,13 @@ export function Status(projectID: string, worktree: string): $CancellablePromise
  */
 export function SwitchBranch(projectID: string, worktree: string, branch: string): $CancellablePromise<void> {
     return $Call.ByID(4109009195, projectID, worktree, branch);
+}
+
+/**
+ * Unstage takes paths out of the index, keeping their edits; no paths unstages everything.
+ */
+export function Unstage(projectID: string, worktree: string, paths: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(3042809010, projectID, worktree, paths);
 }
 
 /**

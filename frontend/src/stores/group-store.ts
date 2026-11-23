@@ -299,6 +299,11 @@ type GroupState = {
   setTabUrl: (groupId: string, tabId: string, url: string) => void;
   /** Starts a terminal tab's shell again, as administrator or not. */
   restartTerminal: (groupId: string, tabId: string, admin: boolean) => void;
+  /**
+   * Shows a workspace file as a tab of the group, scrolled to `line`: its existing tab if the
+   * file is open, else a new tab in the focused window.
+   */
+  openFile: (groupId: string, path: string, line?: number) => void;
 
   /** Moves focus to the window in a direction (active group). */
   focusDirection: (dir: Direction) => void;
@@ -604,6 +609,39 @@ export const useGroups = create<GroupState>((set, get) => {
           })),
         };
       }),
+
+    openFile: (groupId, path, line) => {
+      const g = get().groups.find((x) => x.id === groupId);
+      if (!g) return;
+      const existing = tabsOf(g.root).find((t) => t.kind === "file" && t.path === path);
+      if (existing) {
+        const pane = paneOfTab(g.root, existing.id)!;
+        edit(groupId, (x) => ({
+          ...x,
+          root: updatePane(x.root, pane.id, (p) => ({
+            ...p,
+            tabs: p.tabs.map((t) => (t.id === existing.id ? { ...t, line, reveals: (t.reveals ?? 0) + 1 } : t)),
+          })),
+        }));
+        get().selectTab(groupId, existing.id);
+      } else {
+        const tab: Tab = { id: uid("tab"), kind: "file", path, line };
+        const target = findPane(g.root, g.focused) ?? panesOf(g.root)[0];
+        // An empty window or a placeholder tab takes the file in its place.
+        const placeholder = target.tabs.find((t) => t.id === target.active && t.kind === "new");
+        edit(groupId, (x) => ({
+          ...x,
+          root: updatePane(x.root, target.id, (p) => ({
+            ...p,
+            tabs: placeholder ? p.tabs.map((t) => (t.id === placeholder.id ? tab : t)) : [...p.tabs, tab],
+            active: tab.id,
+          })),
+          focused: target.id,
+          maximized: x.maximized && x.maximized !== target.id ? null : x.maximized,
+        }));
+      }
+      bumpFocus();
+    },
 
     restartTerminal: (groupId, tabId, admin) =>
       edit(groupId, (g) => {

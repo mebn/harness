@@ -40,13 +40,40 @@ func (g *GitService) Diff(projectID, worktree string, file gitx.File) (string, e
 	return r.Diff(context.Background(), file)
 }
 
-// Commit stages all changes and commits them with message.
+// Commit commits the staged changes, or every change when nothing is staged.
 func (g *GitService) Commit(projectID, worktree, message string) error {
 	r, err := g.repo(projectID, worktree)
 	if err != nil {
 		return err
 	}
-	return r.CommitAll(context.Background(), message)
+	return r.Commit(context.Background(), message)
+}
+
+// Stage adds paths to the index; no paths stages every change.
+func (g *GitService) Stage(projectID, worktree string, paths []string) error {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return err
+	}
+	return r.Stage(context.Background(), paths)
+}
+
+// Unstage takes paths out of the index, keeping their edits; no paths unstages everything.
+func (g *GitService) Unstage(projectID, worktree string, paths []string) error {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return err
+	}
+	return r.Unstage(context.Background(), paths)
+}
+
+// Discard throws away the unstaged changes of files (untracked files are deleted).
+func (g *GitService) Discard(projectID, worktree string, files []gitx.File) error {
+	r, err := g.repo(projectID, worktree)
+	if err != nil {
+		return err
+	}
+	return r.Discard(context.Background(), files)
 }
 
 func (g *GitService) Push(projectID, worktree string) error {

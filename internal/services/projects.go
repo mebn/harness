@@ -18,10 +18,11 @@ type ProjectService struct {
 	store     *store.Store
 	providers *provider.Registry
 	files     attach.Store
+	chat      *ChatService // told about settings changes and deleted chats (may be nil)
 }
 
-func NewProjectService(s *store.Store, r *provider.Registry, files attach.Store) *ProjectService {
-	return &ProjectService{store: s, providers: r, files: files}
+func NewProjectService(s *store.Store, r *provider.Registry, files attach.Store, chat *ChatService) *ProjectService {
+	return &ProjectService{store: s, providers: r, files: files, chat: chat}
 }
 
 // Tree returns all projects with their sessions. Env is always derived from the path.
@@ -54,6 +55,9 @@ func (p *ProjectService) RemoveProject(id string) error {
 		for _, n := range tree {
 			if n.Project.ID == id {
 				for _, s := range n.Sessions {
+					if p.chat != nil {
+						p.chat.sessionDeleted(s.ID)
+					}
 					_ = p.files.RemoveSession(s.ID)
 				}
 			}
@@ -135,6 +139,9 @@ func (p *ProjectService) RenameSession(id, title string) error {
 }
 
 func (p *ProjectService) DeleteSession(id string) error {
+	if p.chat != nil {
+		p.chat.sessionDeleted(id)
+	}
 	_ = p.files.RemoveSession(id)
 	return p.store.DeleteSession(id)
 }
@@ -167,7 +174,13 @@ func (p *ProjectService) UpdateSessionSettings(id, providerID, model, effort, mo
 		sess.FastState, sess.FastOffReason = "", "" // unknown until the next turn reports it
 	}
 	sess.Model, sess.Effort, sess.Mode, sess.Fast = model, effort, mode, fast && canFast
-	return sess, p.store.UpdateSession(&sess)
+	if err := p.store.UpdateSession(&sess); err != nil {
+		return sess, err
+	}
+	if p.chat != nil {
+		p.chat.settingsChanged(sess)
+	}
+	return sess, nil
 }
 
 func hasOption(opts []provider.Option, id string) bool {

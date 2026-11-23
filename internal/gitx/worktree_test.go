@@ -35,7 +35,7 @@ func TestAddWorktree(t *testing.T) {
 		}
 	}
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
-	if err := r.CommitAll(ctx, "init"); err != nil {
+	if err := r.Commit(ctx, "init"); err != nil {
 		t.Fatal(err)
 	}
 	w, err := r.AddWorktree(ctx, dir, "feat")

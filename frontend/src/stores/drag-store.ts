@@ -30,6 +30,8 @@ export type Drag = {
   newPaneId: string;
   geometry: FrozenGeometry;
   target: DragTarget | null;
+  /** Called after the drag lands somewhere (e.g. the file explorer closes a file dragged out). */
+  onDrop?: () => void;
 };
 
 type DragState = {
@@ -64,5 +66,6 @@ export const useDrag = create<DragState>((set, get) => ({
     if (t.kind === "layout") groups.drop(drag.groupId, drag.payload, t.target, drag.newPaneId);
     else if (t.kind === "group") groups.moveToGroup(drag.groupId, drag.payload, t.groupId);
     else groups.moveToNewGroup(drag.groupId, drag.payload);
+    drag.onDrop?.();
   },
 }));

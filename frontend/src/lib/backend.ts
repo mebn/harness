@@ -10,7 +10,15 @@ export {
   UsageService,
 } from "@bindings/harness/internal/services";
 
-export type { SystemInfo, FileEntry } from "@bindings/harness/internal/services/models";
+export type {
+  SystemInfo,
+  FileEntry,
+  PendingRequest,
+  PermissionAnswer,
+  ClaudeChat,
+  RewindResult,
+} from "@bindings/harness/internal/services/models";
+export type { Command as SlashCommand, Task as BackgroundTask } from "@bindings/harness/internal/provider/models";
 export type { Message, Part, Project, ProjectTree, Session } from "@bindings/harness/internal/store/models";
 export type { Branch as GitBranch, File as GitFile, Status as GitStatus, Worktree } from "@bindings/harness/internal/gitx/models";
 export type { Info as ProviderInfo, Option } from "@bindings/harness/internal/provider/models";

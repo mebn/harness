@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as provider$0 from "../provider/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as store$0 from "../store/models.js";
 
 /**
@@ -16,6 +19,14 @@ export interface AttachmentInput {
      * base64
      */
     "data": string;
+}
+
+/**
+ * ChatPending is a session's open requests, oldest first.
+ */
+export interface ChatPending {
+    "sessionId": string;
+    "items": PendingRequest[] | null;
 }
 
 /**
@@ -35,6 +46,24 @@ export interface ChatStatus {
 }
 
 /**
+ * ChatTasks is a session's running background tasks.
+ */
+export interface ChatTasks {
+    "sessionId": string;
+    "tasks": provider$0.Task[] | null;
+}
+
+/**
+ * ClaudeChat is a Claude Code conversation saved on disk for a folder.
+ */
+export interface ClaudeChat {
+    "id": string;
+    "title": string;
+    "updatedAt": number;
+    "size": number;
+}
+
+/**
  * FileEntry is one item in the file explorer.
  */
 export interface FileEntry {
@@ -45,6 +74,78 @@ export interface FileEntry {
      */
     "path": string;
     "isDir": boolean;
+}
+
+/**
+ * ForkResult is a chat forked from another.
+ */
+export interface ForkResult {
+    "session": store$0.Session;
+
+    /**
+     * Text of the message forked at, to edit and send in the new chat.
+     */
+    "text": string;
+}
+
+/**
+ * PendingRequest is a tool call waiting for the user's permission, a question the agent
+ * asked (AskUserQuestion), or a plan waiting for approval (ExitPlanMode).
+ */
+export interface PendingRequest {
+    "id": string;
+    "sessionId": string;
+    "toolName": string;
+    "toolId": string;
+
+    /**
+     * the tool's input as JSON
+     */
+    "input": string;
+    "title": string;
+    "description": string;
+    "reason": string;
+    "blockedPath": string;
+    "canAlways": boolean;
+    "alwaysLabel": string;
+
+    /**
+     * FromSubagent is true when a subagent asks.
+     */
+    "fromSubagent": boolean;
+    "createdAt": number;
+}
+
+/**
+ * PermissionAnswer is the user's answer to a PendingRequest.
+ */
+export interface PermissionAnswer {
+    "allow": boolean;
+
+    /**
+     * Always also allows calls like this from now on (the provider's suggested rules).
+     */
+    "always": boolean;
+
+    /**
+     * Message tells the agent why it was denied, or what to do instead.
+     */
+    "message": string;
+
+    /**
+     * Interrupt stops the turn along with the denial.
+     */
+    "interrupt": boolean;
+
+    /**
+     * Answers to AskUserQuestion: question text -> chosen label(s), comma-separated.
+     */
+    "answers": { [_ in string]?: string } | null;
+
+    /**
+     * Mode to continue in after approving a plan (ExitPlanMode): "ask" | "edits" | "full".
+     */
+    "mode": string;
 }
 
 /**
@@ -61,6 +162,58 @@ export interface QueuedMessage {
      */
     "steering": boolean;
     "createdAt": number;
+}
+
+/**
+ * RewindResult is what a rewind changed.
+ */
+export interface RewindResult {
+    /**
+     * Text of the message rewound to, to edit and send again.
+     */
+    "text": string;
+
+    /**
+     * FilesChanged lists files restored to how they were before the message.
+     */
+    "filesChanged": string[] | null;
+}
+
+/**
+ * SearchFile groups the matches in one file.
+ */
+export interface SearchFile {
+    "path": string;
+    "matches": SearchMatch[] | null;
+}
+
+/**
+ * SearchMatch is one matching line. Start and End mark the match in Text, in UTF-16 units
+ * (JavaScript string offsets).
+ */
+export interface SearchMatch {
+    "line": number;
+    "text": string;
+    "start": number;
+    "end": number;
+}
+
+/**
+ * SearchOptions tune a text search.
+ */
+export interface SearchOptions {
+    "caseSensitive": boolean;
+    "wholeWord": boolean;
+    "regex": boolean;
+}
+
+/**
+ * SearchResult is a text search's outcome; Truncated means it stopped at the match limit.
+ */
+export interface SearchResult {
+    "files": SearchFile[] | null;
+    "total": number;
+    "truncated": boolean;
 }
 
 /**

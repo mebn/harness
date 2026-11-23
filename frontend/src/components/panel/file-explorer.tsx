@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, File, Folder, FolderTree } from "lucide-react";
+import { pressIntoGroup } from "@/components/workspace/group-view";
 import { FileService, type FileEntry, type GitStatus } from "@/lib/backend";
+import { uid } from "@/lib/layout-tree";
 import { cn } from "@/lib/utils";
 import { useGitStatus } from "@/stores/git-store";
 import { CodeView } from "./code-view";
@@ -19,6 +21,8 @@ const DECORATIONS: Record<string, Decoration> = {
 };
 
 type TreeContext = {
+  /** The group this explorer sits in; files dragged out become tabs there. */
+  groupId: string;
   projectId: string;
   worktree: string;
   /** Increments on every poll so open folders re-list themselves. */
@@ -53,8 +57,26 @@ const TREE = "tree";
 
 type OpenTabs = { files: string[]; active: string };
 
+/**
+ * Starts dragging a file out of the explorer; dropped in the group's layout it becomes a tab
+ * of its own. A press that doesn't move stays a click.
+ */
+function dragFileOut(groupId: string, path: string, e: React.PointerEvent, onDrop?: () => void) {
+  pressIntoGroup(groupId, e, { kind: "new", tab: { id: uid("tab"), kind: "file", path } }, path.split("/").pop()!, "file", onDrop);
+}
+
 /** Live file tree for a project (or worktree) plus open files as tabs (like editor tabs). */
-export function FileExplorer({ projectId, worktree = "", active }: { projectId: string; worktree?: string; active: boolean }) {
+export function FileExplorer({
+  groupId,
+  projectId,
+  worktree = "",
+  active,
+}: {
+  groupId: string;
+  projectId: string;
+  worktree?: string;
+  active: boolean;
+}) {
   const { status } = useGitStatus(projectId, active, worktree);
   const [tabs, setTabs] = useState<OpenTabs>({ files: [], active: TREE });
   const [tick, setTick] = useState(0);
@@ -71,6 +93,11 @@ export function FileExplorer({ projectId, worktree = "", active }: { projectId: 
 
   const open = (path: string) =>
     setTabs({ files: tabs.files.includes(path) ? tabs.files : [...tabs.files, path], active: path });
+  const close = (path: string) =>
+    setTabs((cur) => {
+      const next = closeTab(cur.files.map((p) => ({ id: p })), path, cur.active);
+      return { files: next.tabs.map((t) => t.id), active: next.active || TREE };
+    });
 
   return (
     <div className="flex h-full flex-col">
@@ -86,27 +113,80 @@ export function FileExplorer({ projectId, worktree = "", active }: { projectId: 
         ]}
         active={tabs.active}
         onSelect={(id) => setTabs({ ...tabs, active: id })}
-        onClose={(id) => {
-          const next = closeTab(tabs.files.map((p) => ({ id: p })), id, tabs.active);
-          setTabs({ files: next.tabs.map((t) => t.id), active: next.active || TREE });
-        }}
+        onClose={close}
+        // A file tab dragged out moves to its own tab in the group.
+        onTabPointerDown={(id, e) => id !== TREE && dragFileOut(groupId, id, e, () => close(id))}
       />
       <div className="relative min-h-0 flex-1">
         <div className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
-          <Ctx.Provider value={{ projectId, worktree, tick, onOpen: open, ...decorations }}>
+          <Ctx.Provider value={{ groupId, projectId, worktree, tick, onOpen: open, ...decorations }}>
             <DirNode path="" depth={0} />
           </Ctx.Provider>
         </div>
         {tabs.active !== TREE && (
-          <OpenFile key={tabs.active} projectId={projectId} worktree={worktree} path={tabs.active} tick={tick} />
+          <div className="absolute inset-0 flex flex-col">
+            <FileContent key={tabs.active} projectId={projectId} worktree={worktree} path={tabs.active} tick={tick} />
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-/** An open file tab; re-reads the file on every tick so it shows the latest content. */
-function OpenFile({ projectId, worktree, path, tick }: { projectId: string; worktree: string; path: string; tick: number }) {
+/** A file as a tab of its own in a window, kept up to date while shown. */
+export function FileTab({
+  projectId,
+  worktree,
+  path,
+  line,
+  reveals,
+  active,
+}: {
+  projectId: string;
+  worktree: string;
+  path: string;
+  line?: number;
+  reveals: number;
+  active: boolean;
+}) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    setTick((n) => n + 1);
+    const t = setInterval(() => setTick((n) => n + 1), POLL_MS);
+    return () => clearInterval(t);
+  }, [active]);
+  return (
+    <div className="flex h-full flex-col">
+      <div title={path} className="flex h-7 shrink-0 items-center gap-1 truncate border-b px-3 text-[11px] text-muted-foreground">
+        {path.split("/").map((part, i, all) => (
+          <span key={i} className={cn("truncate", i === all.length - 1 && "text-foreground")}>
+            {i > 0 && <span className="mr-1 text-muted-foreground/60">/</span>}
+            {part}
+          </span>
+        ))}
+      </div>
+      <FileContent projectId={projectId} worktree={worktree} path={path} tick={tick} line={line} reveals={reveals} />
+    </div>
+  );
+}
+
+/** A file's content; re-reads it on every tick so it shows the latest version. */
+function FileContent({
+  projectId,
+  worktree,
+  path,
+  tick,
+  line,
+  reveals,
+}: {
+  projectId: string;
+  worktree: string;
+  path: string;
+  tick: number;
+  line?: number;
+  reveals?: number;
+}) {
   const [content, setContent] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -119,11 +199,7 @@ function OpenFile({ projectId, worktree, path, tick }: { projectId: string; work
   }, [projectId, worktree, path, tick]);
 
   if (content === null) return null;
-  return (
-    <div className="absolute inset-0 flex flex-col">
-      <CodeView path={path} code={content} />
-    </div>
-  );
+  return <CodeView path={path} code={content} line={line} reveals={reveals} />;
 }
 function DirNode({ path, depth }: { path: string; depth: number }) {
   const { projectId, worktree, tick } = useTree();
@@ -176,10 +252,10 @@ function DirEntry({ entry, depth }: { entry: FileEntry; depth: number }) {
 }
 
 function FileRow({ entry, depth }: { entry: FileEntry; depth: number }) {
-  const { files, onOpen } = useTree();
+  const { groupId, files, onOpen } = useTree();
   const deco = files.get(entry.path);
   return (
-    <Row depth={depth} onClick={() => onOpen(entry.path)}>
+    <Row depth={depth} onClick={() => onOpen(entry.path)} onPointerDown={(e) => dragFileOut(groupId, entry.path, e)}>
       <span className="w-3 shrink-0" />
       <File className="size-3.5 shrink-0 text-muted-foreground" />
       <span className={cn("flex-1 truncate", deco?.className)}>{entry.name}</span>
@@ -188,11 +264,22 @@ function FileRow({ entry, depth }: { entry: FileEntry; depth: number }) {
   );
 }
 
-function Row({ depth, onClick, children }: { depth: number; onClick: () => void; children: React.ReactNode }) {
+function Row({
+  depth,
+  onClick,
+  onPointerDown,
+  children,
+}: {
+  depth: number;
+  onClick: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  children: React.ReactNode;
+}) {
   return (
     <div
       role="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
       style={{ paddingLeft: 8 + depth * 12 }}
       className="flex h-6 cursor-default items-center gap-1.5 pr-2 text-xs hover:bg-accent/60"
     >

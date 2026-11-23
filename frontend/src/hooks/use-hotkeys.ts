@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { TAB_KINDS, findPane, panesOf } from "@/lib/layout-tree";
+import { TAB_KINDS, findPane, panesOf, sizeKind } from "@/lib/layout-tree";
 import { findShortcut, isMac, useShortcuts, type ShortcutId } from "@/lib/shortcuts";
 import { useGroups } from "@/stores/group-store";
 import { useLayout } from "@/stores/layout-store";
@@ -24,7 +24,7 @@ function run(id: ShortcutId, index: number) {
 
   // Text size follows the kind of tab in the focused window.
   const activeKind = pane?.tabs.find((t) => t.id === pane.active)?.kind;
-  const focusedKind = activeKind === "new" ? undefined : activeKind;
+  const focusedKind = activeKind && sizeKind(activeKind);
 
   switch (id) {
     case "zoomIn":
@@ -85,6 +85,10 @@ function run(id: ShortcutId, index: number) {
       return group && layout.setRenamingGroup(group.id);
     case "search":
       return layout.setSearchOpen(!layout.searchOpen);
+    case "findFile":
+      return layout.setFileSearch(layout.fileSearch === "files" ? null : "files");
+    case "findInFiles":
+      return layout.setFileSearch(layout.fileSearch === "text" ? null : "text");
     case "toggleSidebar":
       return layout.toggleSidebar();
     case "settings":

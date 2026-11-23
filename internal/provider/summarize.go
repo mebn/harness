@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const maxToolOutput = 16 * 1024
+const maxToolOutput = 64 * 1024
 
 // summarizeInput picks the most descriptive field of a tool input for display.
 func summarizeInput(input map[string]any) string {
@@ -49,3 +49,12 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "\n…"
 }
+
+// SummarizeInput is a one-line summary of a tool's input.
+func SummarizeInput(input map[string]any) string { return summarizeInput(input) }
+
+// ToolArgs is a tool's full input as JSON, cut down when very large.
+func ToolArgs(input map[string]any) string { return toolArgs(input) }
+
+// FlattenContent turns a tool result's content into text.
+func FlattenContent(raw json.RawMessage) string { return flattenContent(raw) }

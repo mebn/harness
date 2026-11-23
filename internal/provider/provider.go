@@ -3,6 +3,8 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	"harness/internal/platform"
 	"harness/internal/usage"
@@ -29,10 +31,14 @@ type Info struct {
 	Steer bool `json:"steer"`
 	// Fast is true when the provider has a fast mode.
 	Fast bool `json:"fast"`
+	// Interactive is true when the provider asks before using tools, takes slash commands,
+	// and can rewind and fork conversations.
+	Interactive bool `json:"interactive"`
 }
 
-// Permission modes shared by all providers; each maps them to its own flags.
+// Permission modes; each provider maps them to its own flags.
 const (
+	ModeAsk   = "ask" // ask before tools that need permission
 	ModeFull  = "full"
 	ModeEdits = "edits"
 	ModePlan  = "plan"
@@ -44,21 +50,39 @@ var commonModes = []Option{
 	{ID: ModePlan, Label: "Plan"},
 }
 
-// Request is one user turn sent to a provider.
-type Request struct {
-	Prompt    string
-	Dir       string
-	Env       platform.Env
-	Model     string
-	Effort    string
-	Mode      string
-	Fast      bool   // fast mode, when the provider has one
+// Settings are the per-session choices a conversation runs with.
+type Settings struct {
+	Model  string
+	Effort string
+	Mode   string
+	Fast   bool // fast mode, when the provider has one
+}
+
+// OpenRequest starts a conversation with a provider.
+type OpenRequest struct {
+	Dir string
+	Env platform.Env
+	Settings
 	SessionID string // provider-side session id
+	Resume    bool   // true when SessionID already exists on the provider side
+	// ForkFrom, when set, starts SessionID as a copy of that provider session, cut after the
+	// entry ResumeAt ("" = the whole conversation).
+	ForkFrom string
+	ResumeAt string
+	// LastUUID is the id of the conversation's latest entry, carried over from earlier runs.
+	LastUUID string
+}
+
+// Request is one user turn for providers that run a process per turn.
+type Request struct {
+	Prompt string
+	Dir    string
+	Env    platform.Env
+	Settings
+	SessionID string
 	// Attachments are files saved on the host; providers decide how to pass them.
 	Attachments []Attachment
-	Resume      bool // true when SessionID already exists on the provider side
-	// Steering, when set, lets the caller send more messages while the turn runs.
-	Steering *Steering
+	Resume      bool
 }
 
 // Attachment is a file the user attached to a turn.
@@ -69,34 +93,76 @@ type Attachment struct {
 	IsImage  bool
 }
 
+// Input is a user message sent to a conversation.
+type Input struct {
+	ID          string // a UUID; Claude Code keeps it as the message's id
+	Prompt      string
+	Attachments []Attachment
+}
+
+// ErrUnsupported is returned for requests a provider can't handle.
+var ErrUnsupported = errors.New("not supported by this provider")
+
+// Conn is a conversation with a provider. Claude keeps one CLI process per conversation,
+// so it takes messages mid-turn and starts turns on its own (when a background task ends);
+// other providers run a process per turn behind the same interface.
+type Conn interface {
+	// Events streams everything the provider reports, across turns. It closes when the
+	// conversation ends (the process exited or Close was called).
+	Events() <-chan Event
+	// Send starts a turn, or steers the message into the running one.
+	Send(in Input) error
+	// Apply changes settings for the turns that follow (the running one too, where possible).
+	Apply(s Settings) error
+	// Interrupt stops the running turn.
+	Interrupt() error
+	// Respond answers a permission request (EventPermission).
+	Respond(requestID string, result map[string]any) error
+	// Control sends a provider-specific request and waits for its reply.
+	Control(ctx context.Context, subtype string, fields map[string]any) (json.RawMessage, error)
+	Close()
+}
+
 type EventKind int
 
 const (
 	EventText EventKind = iota
+	EventThinking
 	EventToolStart
 	EventToolEnd
 	EventError
 	EventUsage   // plan usage limits reported by the provider
 	EventContext // context window usage of the conversation so far
-	// EventSteered: the agent took in a message sent through Steering (InputID says which).
-	EventSteered
+	// EventInputTaken: the agent took in a message sent with Send (InputID says which;
+	// PrevUUID is the conversation entry before it, "" at the start).
+	EventInputTaken
 	// EventFast: the provider reported fast mode's state (FastState, FastOffReason).
 	EventFast
-
-	// Internal to providers, never sent to callers.
-	eventInputTaken // the CLI echoed a user message back: the agent has taken it in
-	eventTurnEnd    // the agent finished responding to everything it has taken in
+	// EventTurnEnd: the agent finished responding to everything it has taken in.
+	// LastUUID is the conversation's latest entry.
+	EventTurnEnd
+	EventPermission       // the agent asks to use a tool (Permission)
+	EventPermissionCancel // a permission request was withdrawn (RequestID)
+	EventTasks            // the background tasks running now (Tasks)
+	EventTaskDone         // a background task ended (Task)
+	EventCompact          // the conversation was compacted (Text: "manual" | "auto")
+	EventCommands         // the slash commands available (Commands)
+	EventMode             // the provider changed permission mode itself (Mode)
 )
 
 // Event is a normalized streaming event from a provider.
 type Event struct {
-	Kind       EventKind
-	Text       string
-	ToolID     string
-	ToolName   string
+	Kind     EventKind
+	Text     string
+	ToolID   string
+	ToolName string
+	// ToolInput is a one-line summary of the input; ToolArgs the full input as JSON.
 	ToolInput  string
+	ToolArgs   string
 	ToolOutput string
-	IsError    bool
+	// Images a tool returned.
+	Images  []Image
+	IsError bool
 	// ParentID is set on tool calls a subagent made: the id of the Agent tool call running it.
 	ParentID string
 	// Subagent is the agent type of an Agent tool call (e.g. "Explore"); "" for other tools.
@@ -107,9 +173,64 @@ type Event struct {
 	// EventContext: tokens currently in context, and the model's window (0 = not reported).
 	ContextTokens int64
 	ContextWindow int64
-	InputID       string // EventSteered
+	InputID       string // EventInputTaken
+	PrevUUID      string // EventInputTaken
+	LastUUID      string // EventTurnEnd
 	FastState     string // EventFast: "on" | "off" | "cooldown"
 	FastOffReason string // EventFast: why fast mode is off, e.g. "extra_usage_disabled"
+	Permission    *Permission
+	RequestID     string // EventPermissionCancel
+	Tasks         []Task
+	Task          *Task
+	Commands      []Command
+	Mode          string
+}
+
+// Image is an image a tool returned.
+type Image struct {
+	MimeType string
+	Data     []byte
+}
+
+// Permission is a request to use a tool.
+type Permission struct {
+	RequestID string `json:"requestId"`
+	ToolName  string `json:"toolName"`
+	ToolID    string `json:"toolId"`
+	// Input is the tool's input as JSON.
+	Input       string `json:"input"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// Reason says why the provider asks (e.g. a safety check).
+	Reason      string `json:"reason"`
+	BlockedPath string `json:"blockedPath"`
+	// Suggestions are rules that would allow this call from now on (raw JSON array).
+	Suggestions json.RawMessage `json:"-"`
+	// CanAlways is true when "allow always" may be offered.
+	CanAlways bool `json:"canAlways"`
+	// AlwaysLabel describes what "allow always" would allow.
+	AlwaysLabel string `json:"alwaysLabel"`
+	AgentID     string `json:"agentId"`
+}
+
+// Task is a background task (a shell command, subagent or monitor).
+type Task struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	ToolID      string `json:"toolId"`
+	// Set when it ended (EventTaskDone): "completed" | "failed" | "stopped".
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+}
+
+// Command is a slash command.
+type Command struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	ArgumentHint string   `json:"argumentHint"`
+	Aliases      []string `json:"aliases"`
+	Builtin      bool     `json:"builtin"`
 }
 
 // AgentStats summarizes a finished subagent run.
@@ -122,10 +243,10 @@ type AgentStats struct {
 // IsAgentTool reports whether a tool call starts a subagent (named Task in older CLIs).
 func IsAgentTool(name string) bool { return name == "Agent" || name == "Task" }
 
-// Provider runs one turn and streams events until the channel closes.
+// Provider opens conversations.
 type Provider interface {
 	Info() Info
-	Run(ctx context.Context, req Request) (<-chan Event, error)
+	Open(ctx context.Context, req OpenRequest) (Conn, error)
 }
 
 // Registry holds providers in display order.

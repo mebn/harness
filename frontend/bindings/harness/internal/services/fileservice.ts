@@ -19,8 +19,23 @@ export function List(projectID: string, worktree: string, rel: string): $Cancell
 }
 
 /**
+ * ListAll returns every file of a project (or worktree), relative to its folder: what git
+ * tracks or would add, or, outside a repository, everything but common build folders.
+ */
+export function ListAll(projectID: string, worktree: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3778653480, projectID, worktree);
+}
+
+/**
  * Read returns a text file's content for preview.
  */
 export function Read(projectID: string, worktree: string, rel: string): $CancellablePromise<string> {
     return $Call.ByID(4131128053, projectID, worktree, rel);
+}
+
+/**
+ * Search finds query in the text files of a project (or worktree), like VS Code's search.
+ */
+export function Search(projectID: string, worktree: string, query: string, opts: $models.SearchOptions): $CancellablePromise<$models.SearchResult> {
+    return $Call.ByID(1264363321, projectID, worktree, query, opts);
 }

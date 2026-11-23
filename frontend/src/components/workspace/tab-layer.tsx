@@ -1,10 +1,10 @@
 import { memo, useRef } from "react";
 import { ChatView } from "@/components/chat/chat-view";
 import { BrowserView } from "@/components/panel/browser-view";
-import { FileExplorer } from "@/components/panel/file-explorer";
+import { FileExplorer, FileTab } from "@/components/panel/file-explorer";
 import { GitChanges } from "@/components/panel/git-changes";
 import { TerminalView } from "@/components/panel/terminal-view";
-import { tabsOf, type ContentKind, type Tab } from "@/lib/layout-tree";
+import { sizeKind, tabsOf, type ContentKind, type Tab } from "@/lib/layout-tree";
 import { KindPicker } from "./kind-picker";
 import { cn } from "@/lib/utils";
 import { useGroups, type Group } from "@/stores/group-store";
@@ -55,7 +55,7 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
                   paneId={place?.paneId}
                   visible={shown}
                   focused={shown && group.focused === place?.paneId}
-                  size={tab.kind === "new" ? 0 : fontSize(tab.kind, fontSizes)}
+                  size={sizeKind(tab.kind) ? fontSize(sizeKind(tab.kind)!, fontSizes) : 0}
                 />
               )}
             </div>
@@ -105,7 +105,7 @@ const TabContent = memo(function TabContent({
       />
     );
   return (
-    <div className="h-full w-full" style={{ zoom: size / FONT_META[tab.kind].def }}>
+    <div className="h-full w-full" style={{ zoom: size / FONT_META[sizeKind(tab.kind)!].def }}>
       <ScaledContent tab={tab} groupId={groupId} projectId={projectId} worktree={worktree} visible={visible} />
     </div>
   );
@@ -132,7 +132,11 @@ function ScaledContent({
     case "changes":
       return <GitChanges projectId={projectId} worktree={worktree} active={visible} />;
     case "files":
-      return <FileExplorer key={worktree} projectId={projectId} worktree={worktree} active={visible} />;
+      return <FileExplorer key={worktree} groupId={groupId} projectId={projectId} worktree={worktree} active={visible} />;
+    case "file":
+      return tab.path ? (
+        <FileTab projectId={projectId} worktree={worktree} path={tab.path} line={tab.line} reveals={tab.reveals ?? 0} active={visible} />
+      ) : null;
     default:
       return null;
   }

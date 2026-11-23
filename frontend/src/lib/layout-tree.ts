@@ -9,8 +9,17 @@
 /** What a tab can show. */
 export type ContentKind = "chat" | "terminal" | "browser" | "changes" | "files";
 
-/** A tab is either content, or "new": a placeholder showing the numbered choices until one is picked. */
-export type TabKind = ContentKind | "new";
+/**
+ * A tab is content, "new" (a placeholder showing the numbered choices until one is picked), or
+ * "file": one file from the workspace, opened from search or dragged out of the file explorer.
+ */
+export type TabKind = ContentKind | "new" | "file";
+
+/** Which text-size setting a tab follows: a file tab reads like the file explorer. */
+export function sizeKind(kind: TabKind): ContentKind | undefined {
+  if (kind === "new") return undefined;
+  return kind === "file" ? "files" : kind;
+}
 
 /** The choices, in the order of their numbers (1–5). */
 export const TAB_KINDS: ContentKind[] = ["chat", "terminal", "browser", "changes", "files"];
@@ -26,6 +35,12 @@ export type Tab = {
   admin?: boolean;
   /** terminal: bumped to restart the shell. */
   restarts?: number;
+  /** file: path relative to the workspace (or worktree) folder. */
+  path?: string;
+  /** file: line to scroll to (1-based). */
+  line?: number;
+  /** file: bumped to scroll to `line` again when the same line is opened twice. */
+  reveals?: number;
 };
 
 export type PaneNode = { type: "pane"; id: string; tabs: Tab[]; active: string | null };
@@ -159,7 +174,7 @@ export function dropIfEmpty(node: LayoutNode, paneId: string | undefined): Layou
 /** Repairs a layout loaded from storage (bad sizes, dangling active ids). */
 export function sanitize(node: LayoutNode): LayoutNode {
   if (node.type === "pane") {
-    const tabs = Array.isArray(node.tabs) ? node.tabs.filter((t) => t && t.id && (t.kind === "new" || TAB_KINDS.includes(t.kind))) : [];
+    const tabs = Array.isArray(node.tabs) ? node.tabs.filter((t) => t && t.id && (t.kind === "new" || (t.kind === "file" && !!t.path) || (TAB_KINDS as TabKind[]).includes(t.kind))) : [];
     const active = tabs.some((t) => t.id === node.active) ? node.active : (tabs[0]?.id ?? null);
     return { type: "pane", id: node.id || uid("pane"), tabs, active };
   }
@@ -273,7 +288,8 @@ export function neighbor(rects: Record<string, Rect>, fromId: string, dir: Direc
 // ---- moving tabs and windows ----
 
 /** What is being dragged or moved: one tab, or a whole window with all its tabs. */
-export type Payload = { kind: "tab"; tabId: string } | { kind: "pane"; paneId: string };
+/** What is dragged: a tab, a whole window, or a tab not yet in any layout (a file from the explorer). */
+export type Payload = { kind: "tab"; tabId: string } | { kind: "pane"; paneId: string } | { kind: "new"; tab: Tab };
 
 /** Where it goes inside a group. */
 export type DropTarget =
@@ -283,6 +299,7 @@ export type DropTarget =
 
 /** Removes the payload from a layout; the last window is kept (emptied) rather than removed. */
 export function extractPayload(root: LayoutNode, payload: Payload): { root: LayoutNode; tabs: Tab[] } {
+  if (payload.kind === "new") return { root, tabs: [payload.tab] };
   if (payload.kind === "tab") {
     const { root: next, tab, paneId } = detachTab(root, payload.tabId);
     return { root: dropIfEmpty(next, paneId), tabs: tab ? [tab] : [] };
@@ -303,6 +320,19 @@ export function applyMove(
   newPaneId: string,
 ): { root: LayoutNode; focus: string } | null {
   const targetPane = findPane(root, target.paneId);
+  if (!targetPane) return null;
+  if (payload.kind === "new") {
+    if (target.kind === "edge") {
+      return { root: insertBeside(root, target.paneId, newPane([payload.tab], newPaneId), target.side), focus: newPaneId };
+    }
+    const index = target.kind === "tabs" ? target.index : targetPane.tabs.length;
+    const next = updatePane(root, target.paneId, (p) => {
+      const list = [...p.tabs];
+      list.splice(Math.min(index, list.length), 0, payload.tab);
+      return { ...p, tabs: list, active: payload.tab.id };
+    });
+    return { root: next, focus: target.paneId };
+  }
   const source = payload.kind === "tab" ? paneOfTab(root, payload.tabId) : findPane(root, payload.paneId);
   if (!targetPane || !source) return null;
   const self = source.id === targetPane.id;

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,11 +12,7 @@ import (
 func collect(parse lineParser, lines ...string) []Event {
 	var out []Event
 	for _, l := range lines {
-		parse([]byte(l), func(e Event) {
-			if e.Kind < eventInputTaken { // skip events internal to providers
-				out = append(out, e)
-			}
-		})
+		parse([]byte(l), func(e Event) { out = append(out, e) })
 	}
 	return out
 }
@@ -65,11 +62,10 @@ func TestClaudeInputAttachments(t *testing.T) {
 	dir := t.TempDir()
 	img := filepath.Join(dir, "a.png")
 	os.WriteFile(img, []byte("png-bytes"), 0o644)
-	req := Request{Prompt: "look", Env: "native", Attachments: []Attachment{
+	in, err := claudeInput("native", Input{ID: "u1", Prompt: "look", Attachments: []Attachment{
 		{Name: "a.png", MimeType: "image/png", Path: img, IsImage: true},
 		{Name: "notes.txt", MimeType: "text/plain", Path: filepath.Join(dir, "notes.txt")},
-	}}
-	in, err := claudeInput(req.Env, req.Prompt, req.Attachments)
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,5 +144,111 @@ func TestParseClaudeFastMode(t *testing.T) {
 	}
 	if len(fast) != 2 || fast[0].FastState != "off" || fast[0].FastOffReason != "extra_usage_disabled" || fast[1].FastState != "on" {
 		t.Fatalf("fast events: %+v", fast)
+	}
+}
+
+func TestClaudeInputPlainText(t *testing.T) {
+	in, err := claudeInput("native", Input{ID: "u1", Prompt: "/compact"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg struct {
+		UUID    string `json:"uuid"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(in), &msg); err != nil || msg.UUID != "u1" || msg.Message.Content != "/compact" {
+		t.Fatalf("got %s (%v)", in, err)
+	}
+}
+
+func TestParseClaudeThinkingAndSystem(t *testing.T) {
+	ev := collect(parseClaudeLine,
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}}`,
+		`{"type":"system","subtype":"status","status":null,"permissionMode":"default"}`,
+		`{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"manual"}}`,
+		`{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash","description":"sleep"},{"task_id":"w","task_type":"x","description":"","ambient":true}]}`,
+		`{"type":"system","subtype":"task_notification","task_id":"b1","tool_use_id":"t9","status":"completed","summary":"done"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}]}]}}`,
+	)
+	if len(ev) != 6 {
+		t.Fatalf("events: %+v", ev)
+	}
+	if ev[0].Kind != EventThinking || ev[0].Text != "hmm" || ev[1].Mode != ModeAsk || ev[2].Kind != EventCompact || ev[2].Text != "manual" {
+		t.Fatalf("events: %+v", ev[:3])
+	}
+	if len(ev[3].Tasks) != 1 || ev[3].Tasks[0].ID != "b1" || ev[4].Task.Status != "completed" || ev[4].Task.ToolID != "t9" {
+		t.Fatalf("tasks: %+v %+v", ev[3], ev[4])
+	}
+	if len(ev[5].Images) != 1 || string(ev[5].Images[0].Data) != "hi" {
+		t.Fatalf("images: %+v", ev[5])
+	}
+}
+
+func drain(c *claudeConn) []Event {
+	var out []Event
+	for {
+		select {
+		case e := <-c.events:
+			out = append(out, e)
+		default:
+			return out
+		}
+	}
+}
+
+func TestClaudeConnReplayAndRewindPoint(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := newClaudeConn(ctx, cancel, OpenRequest{LastUUID: "start"})
+	c.inputs["m1"] = true
+	c.handle([]byte(`{"type":"user","isReplay":true,"uuid":"m1","message":{"content":"hi"}}`))
+	c.handle([]byte(`{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"yo"}]}}`))
+	// A subagent's entries aren't the main conversation's.
+	c.handle([]byte(`{"type":"assistant","uuid":"sub","parent_tool_use_id":"x","message":{"content":[]}}`))
+	// Echoes of messages we didn't send (e.g. command output) are ignored.
+	c.handle([]byte(`{"type":"user","isReplay":true,"uuid":"other","message":{"content":"x"}}`))
+	c.handle([]byte(`{"type":"result","subtype":"success"}`))
+	ev := drain(c)
+	if len(ev) != 2 || ev[0].Kind != EventInputTaken || ev[0].InputID != "m1" || ev[0].PrevUUID != "start" {
+		t.Fatalf("events: %+v", ev)
+	}
+	if ev[1].Kind != EventTurnEnd || ev[1].LastUUID != "a1" {
+		t.Fatalf("turn end: %+v", ev[1])
+	}
+}
+
+func TestClaudeConnPermissionRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := newClaudeConn(ctx, cancel, OpenRequest{})
+	c.handle([]byte(`{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"npm test"},"tool_use_id":"t1","decision_reason":"\u001b[1mcareful\u001b[0m","permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm test:*"}],"behavior":"allow","destination":"localSettings"}]}}`))
+	c.handle([]byte(`{"type":"control_cancel_request","request_id":"r1"}`))
+	ev := drain(c)
+	if len(ev) != 2 || ev[0].Kind != EventPermission || ev[1].Kind != EventPermissionCancel || ev[1].RequestID != "r1" {
+		t.Fatalf("events: %+v", ev)
+	}
+	p := ev[0].Permission
+	if p.RequestID != "r1" || p.ToolID != "t1" || p.Reason != "careful" || !p.CanAlways || p.AlwaysLabel != "Bash(npm test:*)" || !strings.Contains(p.Input, "npm test") {
+		t.Fatalf("permission: %+v", p)
+	}
+}
+
+func TestClaudeConnControlResponse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := newClaudeConn(ctx, cancel, OpenRequest{})
+	go func() {
+		b := <-c.writes
+		var req struct {
+			RequestID string `json:"request_id"`
+		}
+		_ = json.Unmarshal(b, &req)
+		c.handle([]byte(`{"type":"control_response","response":{"subtype":"success","request_id":"` + req.RequestID + `","response":{"canRewind":true}}}`))
+	}()
+	raw, err := c.Control(ctx, "rewind_files", map[string]any{"user_message_id": "m1"})
+	if err != nil || !strings.Contains(string(raw), "canRewind") {
+		t.Fatalf("got %s, %v", raw, err)
 	}
 }

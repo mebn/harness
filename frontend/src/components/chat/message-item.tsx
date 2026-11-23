@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import type { Message, Part } from "@/lib/backend";
 import { AttachmentView } from "./attachment-view";
 import { AgentCall, isAgentPart } from "./agent-call";
+import { MessageActions } from "./message-actions";
+import { ThinkingBlock } from "./thinking-block";
 import { ToolCall } from "./tool-call";
 
 const remarkPlugins = [remarkGfm];
@@ -16,6 +18,8 @@ function PartView({ part }: { part: Part }) {
           <Markdown remarkPlugins={remarkPlugins}>{part.text ?? ""}</Markdown>
         </div>
       );
+    case "thinking":
+      return <ThinkingBlock part={part} />;
     case "tool":
       return <ToolCall part={part} />;
     case "error":
@@ -43,11 +47,12 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Mes
   if (message.role === "user") {
     const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("\n");
     return (
-      <div className="flex flex-col items-end gap-2">
+      <div className="group/msg flex flex-col items-end gap-1">
         <AttachmentView parts={parts.filter((p) => p.type === "attachment")} />
         {text && (
           <div className="max-w-[85%] rounded-2xl bg-secondary px-4 py-2 whitespace-pre-wrap select-text">{text}</div>
         )}
+        <MessageActions message={message} />
       </div>
     );
   }

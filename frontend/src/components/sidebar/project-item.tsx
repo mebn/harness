@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Plus } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -20,6 +20,7 @@ import { canElevate, sidebarOrder, useGroups, type Group } from "@/stores/group-
 import { useSort } from "@/stores/sort-store";
 import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
+import { ImportChatDialog } from "./import-chat-dialog";
 import { GroupItem } from "./group-item";
 
 export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group[] }) {
@@ -28,6 +29,7 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
   const [editing, setEditing] = useState(false);
   // The ⋯ menu; right-clicking the row opens it too.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const toggle = useApp((s) => s.toggleProject);
   const newGroup = useGroups((s) => s.newGroup);
   const reorder = useGroupReorder(project.id, groups);
@@ -51,9 +53,10 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
           setMenuOpen(true);
         }}
         title={project.path}
-        className="group flex h-8 cursor-default items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent"
+        className="group flex h-7 cursor-default items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:text-sidebar-foreground"
       >
-        {state !== "idle" && <ActivityIndicator state={state} />}
+        {/* Expanded, each group shows its own activity; collapsed, the header carries it. */}
+        {!project.expanded && state !== "idle" && <ActivityIndicator state={state} />}
         {editing ? (
           <InlineEdit
             value={project.name}
@@ -64,7 +67,15 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <span className={cn("flex-1 truncate font-medium", STATE_TEXT[state])}>{project.name}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            <span className={cn("truncate text-xs font-semibold", !project.expanded && STATE_TEXT[state])}>{project.name}</span>
+            <ChevronDown
+              className={cn(
+                "size-3 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100",
+                !project.expanded && "-rotate-90 opacity-100",
+              )}
+            />
+          </span>
         )}
         {project.env === "wsl" && (
           <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">WSL</span>
@@ -100,6 +111,9 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
                   Terminals as admin
                 </DropdownMenuCheckboxItem>
               )}
+              {project.env !== "wsl" && (
+                <DropdownMenuItem onSelect={() => setImporting(true)}>Import Claude Code chat…</DropdownMenuItem>
+              )}
               <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
                 Remove
               </DropdownMenuItem>
@@ -107,12 +121,14 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
           </DropdownMenu>
         </HoverSwap>
       </div>
+      {/* Outside the row, so clicks in the dialog don't toggle the folder. */}
+      <ImportChatDialog project={project} open={importing} onOpenChange={setImporting} />
 
       <CollapsibleContent>
         <div
           ref={reorder.listRef}
           onPointerDown={reorder.onPointerDown}
-          className="mx-3.5 flex flex-col gap-0.5 border-l border-sidebar-border py-0.5 pl-2"
+          className="flex flex-col gap-0.5 pb-1"
         >
           {groups.map((g) => (
             <GroupItem
@@ -125,7 +141,7 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
           {groups.length === 0 && !dropHere && (
             <button
               onClick={() => void newGroup(project.id)}
-              className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-sidebar-border px-2 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               New group
             </button>
@@ -133,8 +149,8 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
         </div>
       </CollapsibleContent>
       {dropHere && (
-        <div className="mt-0.5 mx-3.5 border-l border-sidebar-border py-0.5 pl-2">
-          <div className="flex h-7 items-center gap-1.5 rounded-md border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
+        <div className="pb-1">
+          <div className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
             New group
           </div>
         </div>
