@@ -90,7 +90,8 @@ export interface ForkResult {
 
 /**
  * PendingRequest is a tool call waiting for the user's permission, a question the agent
- * asked (AskUserQuestion), or a plan waiting for approval (ExitPlanMode).
+ * asked (AskUserQuestion), a plan waiting for approval (ExitPlanMode), or an MCP server
+ * asking for input (Elicitation set).
  */
 export interface PendingRequest {
     "id": string;
@@ -113,6 +114,12 @@ export interface PendingRequest {
      * FromSubagent is true when a subagent asks.
      */
     "fromSubagent": boolean;
+
+    /**
+     * Feedback is true when a denial can carry a message to the agent.
+     */
+    "feedback": boolean;
+    "elicitation": provider$0.Elicitation | null;
     "createdAt": number;
 }
 
@@ -146,6 +153,12 @@ export interface PermissionAnswer {
      * Mode to continue in after approving a plan (ExitPlanMode): "ask" | "edits" | "full".
      */
     "mode": string;
+
+    /**
+     * Content is what the user entered in an MCP server's form (Elicitation). Allow sends
+     * it, a plain denial declines, and Interrupt cancels.
+     */
+    "content": { [_ in string]?: any } | null;
 }
 
 /**

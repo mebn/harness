@@ -253,6 +253,7 @@ export const useApp = create<AppState>((set, get) => ({
       interrupt: false,
       answers: {},
       mode: "",
+      content: null,
       ...answer,
     });
   },

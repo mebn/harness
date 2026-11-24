@@ -31,8 +31,8 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0 0 0 / 8%);
 
-  /* A neutral wash over the OS blur, so all color comes from what is behind the window. */
-  --backdrop: oklch(0.98 0 0 / 50%);
+  /* Solid background behind the sidebar and title bar. */
+  --backdrop: oklch(0.955 0 0);
   --pane: oklch(0.99 0 0);
   --pane-focused: oklch(1 0 0);
   --pane-border: oklch(0 0 0 / 12%);
@@ -63,7 +63,7 @@
   --sidebar-accent-foreground: oklch(0.95 0 0);
   --sidebar-border: oklch(1 0 0 / 7%);
 
-  --backdrop: oklch(0.16 0 0 / 60%);
+  --backdrop: oklch(0.155 0 0);
   --pane: oklch(0.195 0 0);
   --pane-focused: oklch(0.205 0 0);
   --pane-border: oklch(1 0 0 / 12%);
@@ -110,7 +110,7 @@
   #root {
     @apply h-full overflow-hidden;
   }
-  /* Transparent so the OS-blurred desktop shows through; .app-backdrop adds the tint. */
+  /* Transparent; .app-backdrop paints the solid background. */
   body {
     @apply bg-transparent text-foreground text-sm antialiased select-none;
   }
@@ -126,7 +126,7 @@
   }
 }
 
-/* Backdrop behind the sidebar and window cards: a neutral wash over the OS blur. */
+/* Backdrop behind the sidebar, title bar and window cards. */
 .app-backdrop {
   background: var(--backdrop);
 }
@@ -147,8 +147,8 @@
 }
 
 /*
- * A window card. Cards are opaque (only the sidebar and title bar show the translucent
- * backdrop); the focused one is a shade brighter. Windows sit edge to edge, so each draws only
+ * A window card, on the backdrop like the sidebar and title bar.
+ * The focused one is a shade brighter. Windows sit edge to edge, so each draws only
  * its right and bottom border and the group area draws the top and left: every seam is one line.
  */
 .pane-card {

@@ -3,6 +3,7 @@
 
 export type {
     Command,
+    Elicitation,
     Info,
     Option,
     Task

@@ -192,7 +192,8 @@ type Image struct {
 	Data     []byte
 }
 
-// Permission is a request to use a tool.
+// Permission is a request to use a tool, or (with Elicitation set) a request for input
+// from an MCP server.
 type Permission struct {
 	RequestID string `json:"requestId"`
 	ToolName  string `json:"toolName"`
@@ -211,6 +212,23 @@ type Permission struct {
 	// AlwaysLabel describes what "allow always" would allow.
 	AlwaysLabel string `json:"alwaysLabel"`
 	AgentID     string `json:"agentId"`
+	// Feedback is true when a denial can carry a message telling the agent what to do instead.
+	Feedback bool `json:"feedback"`
+	// Elicitation is set when an MCP server asks the user for input instead of a tool asking
+	// to run. The answer is {action: "accept"|"decline"|"cancel", content}.
+	Elicitation *Elicitation `json:"elicitation,omitempty"`
+}
+
+// Elicitation is an MCP server's request for input: a form (Schema) or a URL to visit.
+type Elicitation struct {
+	Server  string `json:"server"`
+	Message string `json:"message"`
+	Mode    string `json:"mode"` // "form" | "url"
+	URL     string `json:"url"`
+	// Schema is the JSON Schema of the requested object (form mode), as JSON.
+	Schema string `json:"schema"`
+	// Order lists Schema's top-level properties in the order the server gave them.
+	Order []string `json:"order"`
 }
 
 // Task is a background task (a shell command, subagent or monitor).

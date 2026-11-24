@@ -22,9 +22,11 @@ export function PermissionPrompt({ sessionId }: { sessionId: string }) {
   };
 
   return (
-    <div className="mb-2 rounded-xl border border-amber-500/40 bg-card shadow-sm" role="dialog" aria-label="Claude needs your input">
+    <div className="mb-2 rounded-xl border border-amber-500/40 bg-card shadow-sm" role="dialog" aria-label="The agent needs your input">
       {items.length > 1 && <p className="px-4 pt-2 text-[11px] text-muted-foreground">1 of {items.length} waiting</p>}
-      {req.toolName === "AskUserQuestion" ? (
+      {req.elicitation ? (
+        <ElicitationPrompt key={req.id} req={req} onAnswer={answer} />
+      ) : req.toolName === "AskUserQuestion" ? (
         <QuestionsPrompt key={req.id} req={req} onAnswer={answer} />
       ) : req.toolName === "ExitPlanMode" ? (
         <PlanPrompt key={req.id} req={req} onAnswer={answer} />
@@ -68,25 +70,27 @@ function ToolPrompt({ req, onAnswer }: PromptProps) {
           Deny
         </Button>
       </div>
-      <form
-        className="mt-2 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (feedback.trim()) onAnswer({ allow: false, message: feedback.trim() });
-        }}
-      >
-        <input
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Or deny and tell Claude what to do instead…"
-          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none select-text focus:border-ring"
-        />
-        {feedback.trim() && (
-          <Button size="sm" variant="secondary" type="submit">
-            Send
-          </Button>
-        )}
-      </form>
+      {req.feedback && (
+        <form
+          className="mt-2 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (feedback.trim()) onAnswer({ allow: false, message: feedback.trim() });
+          }}
+        >
+          <input
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            placeholder="Or deny and tell Claude what to do instead…"
+            className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none select-text focus:border-ring"
+          />
+          {feedback.trim() && (
+            <Button size="sm" variant="secondary" type="submit">
+              Send
+            </Button>
+          )}
+        </form>
+      )}
     </div>
   );
 }
@@ -100,6 +104,7 @@ function ToolPreview({ name, args, blockedPath }: { name: string; args: Record<s
   switch (name) {
     case "Bash":
     case "PowerShell":
+    case "Shell":
       return pre(`$ ${args.command ?? ""}`);
     case "Edit":
       return (
@@ -248,5 +253,199 @@ function PlanPrompt({ req, onAnswer }: PromptProps) {
         </Button>
       </form>
     </div>
+  );
+}
+
+/** One field of an MCP elicitation form (a flat JSON Schema property). */
+type FieldSchema = {
+  type?: string;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  enum?: string[];
+  enumNames?: string[];
+  oneOf?: { const: string; title?: string }[];
+  items?: { enum?: string[]; anyOf?: { const: string; title?: string }[] };
+};
+
+type Choice = { value: string; label: string };
+
+function choicesOf(f: FieldSchema): Choice[] | null {
+  if (f.oneOf) return f.oneOf.map((o) => ({ value: o.const, label: o.title ?? o.const }));
+  if (f.enum) return f.enum.map((v, i) => ({ value: v, label: f.enumNames?.[i] ?? v }));
+  return null;
+}
+
+function multiChoicesOf(f: FieldSchema): Choice[] | null {
+  if (f.type !== "array" || !f.items) return null;
+  if (f.items.anyOf) return f.items.anyOf.map((o) => ({ value: o.const, label: o.title ?? o.const }));
+  if (f.items.enum) return f.items.enum.map((v) => ({ value: v, label: v }));
+  return null;
+}
+
+/** An MCP server asking for input: a short form, or a link to open. */
+function ElicitationPrompt({ req, onAnswer }: PromptProps) {
+  const e = req.elicitation!;
+  const schema = useMemo(() => {
+    try {
+      return JSON.parse(e.schema || "{}") as { properties?: Record<string, FieldSchema>; required?: string[] };
+    } catch {
+      return {};
+    }
+  }, [e.schema]);
+  const props = schema.properties ?? {};
+  const keys = (e.order?.length ? e.order : Object.keys(props)).filter((k) => props[k]);
+  const required = new Set(schema.required ?? []);
+  const [values, setValues] = useState<Record<string, unknown>>(() =>
+    Object.fromEntries(keys.filter((k) => props[k].default !== undefined).map((k) => [k, props[k].default])),
+  );
+  const set = (k: string, v: unknown) => setValues((cur) => ({ ...cur, [k]: v }));
+
+  const missing = keys.some((k) => {
+    if (!required.has(k)) return false;
+    const v = values[k];
+    return v === undefined || v === "" || (Array.isArray(v) && v.length === 0);
+  });
+  const submit = () => {
+    const content: Record<string, unknown> = {};
+    for (const k of keys) {
+      const v = values[k];
+      if (v === undefined || v === "") continue;
+      const t = props[k].type;
+      content[k] = t === "number" || t === "integer" ? Number(v) : v;
+    }
+    onAnswer({ allow: true, content });
+  };
+
+  const header = (
+    <div className="mb-2 flex items-start gap-2">
+      <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-amber-600" />
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-medium">{req.title || `${e.server} needs your input`}</p>
+        {req.description && <p className="text-xs text-muted-foreground">{req.description}</p>}
+        {e.message && <p className="mt-1 whitespace-pre-wrap select-text">{e.message}</p>}
+      </div>
+    </div>
+  );
+  const refuse = (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => onAnswer({ allow: false })} title="Tell the server no">
+        Decline
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => onAnswer({ allow: false, interrupt: true })} title="Dismiss without answering">
+        Cancel
+      </Button>
+    </>
+  );
+
+  if (e.mode === "url") {
+    return (
+      <div className="p-3">
+        {header}
+        <p className="truncate rounded-md bg-muted/50 p-2 font-mono text-[11px] select-text" title={e.url}>
+          {e.url}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button size="sm" asChild>
+            <a href={e.url} target="_blank" rel="noreferrer" onClick={() => onAnswer({ allow: true })}>
+              Open link
+            </a>
+          </Button>
+          {refuse}
+        </div>
+      </div>
+    );
+  }
+
+  const input = "rounded-md border bg-transparent px-2 py-1 text-sm outline-none select-text focus:border-ring";
+  return (
+    <form
+      className="p-3"
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        if (!missing) submit();
+      }}
+    >
+      {header}
+      <div className="grid gap-3">
+        {keys.map((k) => {
+          const f = props[k];
+          const label = (
+            <span className="text-xs font-medium">
+              {f.title ?? k}
+              {required.has(k) && <span className="text-destructive"> *</span>}
+            </span>
+          );
+          const hint = f.description && <span className="text-[11px] text-muted-foreground">{f.description}</span>;
+          const choices = choicesOf(f);
+          const multi = multiChoicesOf(f);
+          if (f.type === "boolean") {
+            return (
+              <label key={k} className="flex items-start gap-2">
+                <input type="checkbox" className="mt-0.5" checked={values[k] === true} onChange={(ev) => set(k, ev.target.checked)} />
+                <span className="grid">
+                  {label}
+                  {hint}
+                </span>
+              </label>
+            );
+          }
+          if (choices || multi) {
+            const list = (choices ?? multi)!;
+            const cur = values[k];
+            const on = (v: string) => (multi ? Array.isArray(cur) && cur.includes(v) : cur === v);
+            const toggle = (v: string) => {
+              if (!multi) return set(k, v);
+              const arr = Array.isArray(cur) ? (cur as string[]) : [];
+              set(k, arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+            };
+            return (
+              <div key={k} className="grid gap-1">
+                {label}
+                {hint}
+                <div className="flex flex-wrap gap-1.5">
+                  {list.map((c) => (
+                    <button
+                      type="button"
+                      key={c.value}
+                      onClick={() => toggle(c.value)}
+                      className={cn("rounded-lg border px-2.5 py-1 text-sm hover:bg-accent/60", on(c.value) && "border-ring bg-accent ring-1 ring-ring/40")}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          const numeric = f.type === "number" || f.type === "integer";
+          const type = numeric ? "number" : f.format === "email" ? "email" : f.format === "uri" ? "url" : f.format === "date" ? "date" : f.format === "date-time" ? "datetime-local" : "text";
+          return (
+            <label key={k} className="grid gap-1">
+              {label}
+              {hint}
+              <input
+                type={type}
+                className={input}
+                value={values[k] === undefined ? "" : String(values[k])}
+                min={f.minimum}
+                max={f.maximum}
+                step={f.type === "integer" ? 1 : "any"}
+                onChange={(ev) => set(k, ev.target.value)}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" type="submit" disabled={missing}>
+          Submit
+        </Button>
+        {refuse}
+      </div>
+    </form>
   );
 }

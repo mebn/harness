@@ -13,6 +13,30 @@ export interface Command {
 }
 
 /**
+ * Elicitation is an MCP server's request for input: a form (Schema) or a URL to visit.
+ */
+export interface Elicitation {
+    "server": string;
+    "message": string;
+
+    /**
+     * "form" | "url"
+     */
+    "mode": string;
+    "url": string;
+
+    /**
+     * Schema is the JSON Schema of the requested object (form mode), as JSON.
+     */
+    "schema": string;
+
+    /**
+     * Order lists Schema's top-level properties in the order the server gave them.
+     */
+    "order": string[] | null;
+}
+
+/**
  * Info describes a provider and the choices it supports.
  */
 export interface Info {

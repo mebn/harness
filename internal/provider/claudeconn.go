@@ -3,6 +3,7 @@ package provider
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -265,8 +266,8 @@ func (c *claudeConn) handleControlResponse(raw json.RawMessage) {
 	}
 }
 
-// handleControlRequest answers requests the CLI sends us. Permission prompts go to the
-// user; anything else we can't serve is refused so the CLI doesn't wait.
+// handleControlRequest answers requests the CLI sends us. Permission prompts and MCP
+// elicitations go to the user; anything else we can't serve is refused so the CLI doesn't wait.
 func (c *claudeConn) handleControlRequest(id string, raw json.RawMessage) {
 	var r struct {
 		Subtype                 string          `json:"subtype"`
@@ -281,8 +282,27 @@ func (c *claudeConn) handleControlRequest(id string, raw json.RawMessage) {
 		ToolUseID               string          `json:"tool_use_id"`
 		AgentID                 string          `json:"agent_id"`
 		SuppressAlwaysAllowRule bool            `json:"suppress_always_allow_rule"`
+		// elicitation
+		MCPServerName   string          `json:"mcp_server_name"`
+		Message         string          `json:"message"`
+		Mode            string          `json:"mode"`
+		URL             string          `json:"url"`
+		RequestedSchema json.RawMessage `json:"requested_schema"`
+		PropertyOrder   []string        `json:"property_order"`
 	}
 	if json.Unmarshal(raw, &r) != nil {
+		return
+	}
+	if r.Subtype == "elicitation" {
+		mode := r.Mode
+		if mode == "" {
+			mode = "form"
+		}
+		c.emit(Event{Kind: EventPermission, Permission: &Permission{RequestID: id, ToolName: "MCP input",
+			Title: r.Title, Description: r.Description, Elicitation: &Elicitation{
+				Server: cmp.Or(r.DisplayName, r.MCPServerName), Message: r.Message, Mode: mode, URL: r.URL,
+				Schema: string(r.RequestedSchema), Order: r.PropertyOrder,
+			}}})
 		return
 	}
 	if r.Subtype != "can_use_tool" {
@@ -293,7 +313,7 @@ func (c *claudeConn) handleControlRequest(id string, raw json.RawMessage) {
 	}
 	p := &Permission{RequestID: id, ToolName: r.ToolName, ToolID: r.ToolUseID, Input: string(r.Input),
 		Title: r.Title, Description: r.Description, Reason: stripANSI(r.DecisionReason), BlockedPath: r.BlockedPath,
-		Suggestions: r.Suggestions, AgentID: r.AgentID}
+		Suggestions: r.Suggestions, AgentID: r.AgentID, Feedback: true}
 	if label := suggestionLabel(r.Suggestions); label != "" && !r.SuppressAlwaysAllowRule {
 		p.CanAlways, p.AlwaysLabel = true, label
 	}

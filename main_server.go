@@ -60,7 +60,7 @@ func main() {
 
 	// Serves calls, events and assets on the host's port, behind its token.
 	transport := server.NewTransport(host)
-	providers := provider.NewRegistry(provider.Claude{}, provider.Copilot{})
+	providers := provider.NewRegistry(provider.Claude{}, provider.NewCopilot(dir))
 	emit := services.Emitter(transport.Emit)
 	usageSvc := services.NewUsageService(db, emit)
 	chat := services.NewChatService(db, providers, usageSvc, files, emit)

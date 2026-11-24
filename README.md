@@ -47,7 +47,7 @@ main_desktop.go             window: finds/starts the server, proxies to it
 internal/
   platform/                 native vs WSL execution, path translation, shell choice
   store/                    SQLite (pure Go) persistence: projects, sessions, messages
-  provider/                 Provider/Conn interfaces + Claude Code / Copilot adapters (JSONL streams)
+  provider/                 Provider/Conn interfaces + Claude Code (stream-json) / Copilot (ACP) adapters
   gitx/                     git CLI wrapper: status with line counts, diffs, commit-all, push
   server/                   server discovery (server.json), auth, HTTP/WebSocket transport, spawning
   desktop/                  window-side proxy to the server and event relay
@@ -79,19 +79,26 @@ frontend/src/
 - Claude Code runs over the stream-json control protocol the Agent SDK uses
   (`internal/provider/claudeconn.go`): one `claude -p` process per chat, kept open between
   turns (closed after 2 hours idle with no background tasks). That gives permission prompts
-  (`--permission-prompt-tool stdio`), AskUserQuestion and plan approval, slash commands
+  (`--permission-prompt-tool stdio`), AskUserQuestion and plan approval, MCP servers asking
+  for input (`elicitation` requests: a form or a link), slash commands
   (listed by `initialize`), thinking (`--thinking-display summarized`), background tasks that
   start a turn when they finish, and rewinding files (`rewind_files`, with file checkpointing
   on). Rewind and fork cut the conversation with `--resume <id> --fork-session
   --resume-session-at <entry>`; each user message is sent with its Harness id as its uuid.
-  Copilot runs a process per turn behind the same interface (`turnconn.go`).
-- Permission modes: Ask permissions (Claude only), Accept edits, Plan, Full access.
+- Copilot runs as an Agent Client Protocol server (`copilot --acp`,
+  `internal/provider/copilotacp.go`): one process per chat, which asks before using tools.
+  Model, effort and mode are ACP config options (Accept edits approves edit requests in
+  Harness; Full access turns on `allow_all`). ACP picks new sessions' ids, so
+  `<data dir>/copilot-sessions.json` maps Harness's ids to Copilot's. Copilot can't take
+  messages mid-turn, rewind or fork, and a denial can't carry a message.
+- Permission modes: Ask permissions, Accept edits, Plan, Full access.
 - `/clear` is handled by Harness (a fresh conversation in the same chat); other slash commands
   go to Claude Code.
 - Workspace menu → "Import Claude Code chat…" adds a conversation started with the CLI in that
   folder (read from `~/.claude/projects`; native folders only).
 - `HARNESS_E2E=1 go test ./internal/services -run ClaudeEndToEnd` checks the Claude
-  integration against the real CLI (uses Haiku).
+  integration against the real CLI (uses Haiku); `HARNESS_E2E=1 go test ./internal/provider
+  -run CopilotEndToEnd` does the same for Copilot.
 - On Windows, a project runs in WSL when its folder lives inside a distro (`\\wsl.localhost\...`
   or `\\wsl$\...`), and natively otherwise. There is no manual switch.
 - To add a provider, implement `provider.Provider` and register it in `main_server.go`.

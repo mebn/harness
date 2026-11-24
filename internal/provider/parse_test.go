@@ -32,18 +32,107 @@ func TestParseClaude(t *testing.T) {
 	}
 }
 
-func TestParseCopilot(t *testing.T) {
-	ev := collect(parseCopilotLine,
-		`{"type":"assistant.message_delta","data":{"deltaContent":"done"}}`,
-		`{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"powershell","arguments":{"command":"echo hi"}}}`,
-		`{"type":"tool.execution_start","data":{"toolCallId":"c2","toolName":"report_intent","arguments":{}}}`,
-		`{"type":"tool.execution_complete","data":{"toolCallId":"c1","success":false,"result":{"content":"hi"}}}`,
-	)
-	if len(ev) != 3 {
+// testCopilotConn is a copilotConn with no process: lines go to handle, and what it would
+// write to the agent comes out of writes.
+func testCopilotConn(mode string) *copilotConn {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &copilotConn{ctx: ctx, cancel: cancel, events: make(chan Event, 64), writes: make(chan []byte, 64),
+		done: make(chan struct{}), ready: make(chan struct{}), settings: Settings{Mode: mode},
+		calls: map[string]chan rpcReply{}, options: map[string]*acpOption{}, perms: map[string]*acpPermission{},
+		tools: map[string]*acpToolCall{}, sessionID: "s1"}
+}
+
+func drainCopilot(c *copilotConn) (evs []Event, writes []string) {
+	for {
+		select {
+		case e := <-c.events:
+			evs = append(evs, e)
+		case w := <-c.writes:
+			writes = append(writes, string(w))
+		default:
+			return
+		}
+	}
+}
+
+const acpPermissionLine = `{"jsonrpc":"2.0","id":0,"method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"t2","title":"Create file","kind":"edit","status":"pending"},"options":[{"optionId":"allow_once","kind":"allow_once","name":"Allow once"},{"optionId":"allow_always","kind":"allow_always","name":"Always allow"},{"optionId":"reject_once","kind":"reject_once","name":"Deny"}]}}`
+
+func TestCopilotUpdates(t *testing.T) {
+	c := testCopilotConn(ModeAsk)
+	for _, l := range []string{
+		`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hi"}}}}`,
+		`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Echo hi","kind":"execute","status":"pending","rawInput":{"command":"echo hi"}}}}`,
+		`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"failed","rawOutput":{"content":"boom"}}}}`,
+		`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"usage_update","used":100,"size":1000}}}`,
+	} {
+		c.handle([]byte(l))
+	}
+	ev, _ := drainCopilot(c)
+	if len(ev) != 4 {
 		t.Fatalf("got %d events: %+v", len(ev), ev)
 	}
-	if ev[0].Text != "done" || ev[1].ToolInput != "echo hi" || ev[2].ToolOutput != "hi" || !ev[2].IsError {
+	if ev[0].Text != "Hi" || ev[1].ToolName != "Shell" || ev[1].ToolInput != "Echo hi" ||
+		ev[2].ToolOutput != "boom" || !ev[2].IsError || ev[3].ContextWindow != 1000 {
 		t.Fatalf("unexpected events: %+v", ev)
+	}
+}
+
+func TestCopilotHistoryReplayHidden(t *testing.T) {
+	c := testCopilotConn(ModeAsk)
+	c.loading = true
+	c.handle([]byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"old"}}}}`))
+	if ev, _ := drainCopilot(c); len(ev) != 0 {
+		t.Fatalf("replayed history was shown: %+v", ev)
+	}
+}
+
+func TestCopilotPermission(t *testing.T) {
+	c := testCopilotConn(ModeAsk)
+	// The edit's diff arrives on the tool call; the request only names it.
+	c.handle([]byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"t2","title":"Creating note.txt","kind":"edit","status":"pending","content":[{"type":"diff","path":"/w/note.txt","oldText":"","newText":"ok"}]}}}`))
+	c.handle([]byte(acpPermissionLine))
+	ev, _ := drainCopilot(c)
+	p := ev[len(ev)-1].Permission
+	if p == nil || p.ToolName != "Write" || !p.CanAlways || p.Description != "Create file" {
+		t.Fatalf("permission: %+v", p)
+	}
+	var input map[string]any
+	_ = json.Unmarshal([]byte(p.Input), &input)
+	if input["file_path"] != "/w/note.txt" || input["content"] != "ok" {
+		t.Fatalf("input: %s", p.Input)
+	}
+	if err := c.Respond(p.RequestID, map[string]any{"behavior": "allow", "updatedPermissions": []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	_, w := drainCopilot(c)
+	if len(w) != 1 || !strings.Contains(w[0], `"id":0`) || !strings.Contains(w[0], `"optionId":"allow_always"`) {
+		t.Fatalf("reply: %v", w)
+	}
+}
+
+func TestCopilotAcceptEditsApprovesEdits(t *testing.T) {
+	c := testCopilotConn(ModeEdits)
+	c.handle([]byte(acpPermissionLine))
+	ev, w := drainCopilot(c)
+	if len(ev) != 0 || len(w) != 1 || !strings.Contains(w[0], `"optionId":"allow_once"`) {
+		t.Fatalf("events %+v, writes %v", ev, w)
+	}
+}
+
+func TestCopilotInterruptCancelsPermissions(t *testing.T) {
+	c := testCopilotConn(ModeAsk)
+	c.handle([]byte(acpPermissionLine))
+	drainCopilot(c)
+	c.running = true
+	if err := c.Interrupt(); err != nil {
+		t.Fatal(err)
+	}
+	ev, w := drainCopilot(c)
+	if len(ev) != 1 || ev[0].Kind != EventPermissionCancel {
+		t.Fatalf("events: %+v", ev)
+	}
+	if len(w) != 2 || !strings.Contains(w[0], `"outcome":"cancelled"`) || !strings.Contains(w[1], `"session/cancel"`) {
+		t.Fatalf("writes: %v", w)
 	}
 }
 
@@ -250,5 +339,26 @@ func TestClaudeConnControlResponse(t *testing.T) {
 	raw, err := c.Control(ctx, "rewind_files", map[string]any{"user_message_id": "m1"})
 	if err != nil || !strings.Contains(string(raw), "canRewind") {
 		t.Fatalf("got %s, %v", raw, err)
+	}
+}
+
+func TestClaudeElicitation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := newClaudeConn(ctx, cancel, OpenRequest{})
+	c.handle([]byte(`{"type":"control_request","request_id":"r1","request":{"subtype":"elicitation","mcp_server_name":"github","message":"Which repo?","requested_schema":{"type":"object","properties":{"repo":{"type":"string"}}},"property_order":["repo"]}}`))
+	ev := drain(c)
+	if len(ev) != 1 || ev[0].Kind != EventPermission || ev[0].Permission.Elicitation == nil {
+		t.Fatalf("events: %+v", ev)
+	}
+	e := ev[0].Permission.Elicitation
+	if e.Server != "github" || e.Mode != "form" || e.Message != "Which repo?" || len(e.Order) != 1 || !strings.Contains(e.Schema, `"repo"`) {
+		t.Fatalf("elicitation: %+v", e)
+	}
+	if err := c.Respond("r1", map[string]any{"action": "accept", "content": map[string]any{"repo": "a/b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if w := string(<-c.writes); !strings.Contains(w, `"request_id":"r1"`) || !strings.Contains(w, `"action":"accept"`) {
+		t.Fatalf("reply: %s", w)
 	}
 }

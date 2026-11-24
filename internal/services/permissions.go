@@ -10,7 +10,8 @@ import (
 )
 
 // PendingRequest is a tool call waiting for the user's permission, a question the agent
-// asked (AskUserQuestion), or a plan waiting for approval (ExitPlanMode).
+// asked (AskUserQuestion), a plan waiting for approval (ExitPlanMode), or an MCP server
+// asking for input (Elicitation set).
 type PendingRequest struct {
 	ID          string `json:"id"`
 	SessionID   string `json:"sessionId"`
@@ -24,8 +25,11 @@ type PendingRequest struct {
 	CanAlways   bool   `json:"canAlways"`
 	AlwaysLabel string `json:"alwaysLabel"`
 	// FromSubagent is true when a subagent asks.
-	FromSubagent bool  `json:"fromSubagent"`
-	CreatedAt    int64 `json:"createdAt"`
+	FromSubagent bool `json:"fromSubagent"`
+	// Feedback is true when a denial can carry a message to the agent.
+	Feedback    bool                  `json:"feedback"`
+	Elicitation *provider.Elicitation `json:"elicitation"`
+	CreatedAt   int64                 `json:"createdAt"`
 }
 
 // ChatPending is a session's open requests, oldest first.
@@ -47,6 +51,9 @@ type PermissionAnswer struct {
 	Answers map[string]string `json:"answers"`
 	// Mode to continue in after approving a plan (ExitPlanMode): "ask" | "edits" | "full".
 	Mode string `json:"mode"`
+	// Content is what the user entered in an MCP server's form (Elicitation). Allow sends
+	// it, a plain denial declines, and Interrupt cancels.
+	Content map[string]any `json:"content"`
 }
 
 // Pending returns every session's open requests.
@@ -71,7 +78,8 @@ func (c *ChatService) pendingLocked(ls *liveSession) []PendingRequest {
 		}
 		items = append(items, PendingRequest{ID: id, SessionID: ls.sessionID, ToolName: p.ToolName, ToolID: p.ToolID,
 			Input: p.Input, Title: p.Title, Description: p.Description, Reason: p.Reason, BlockedPath: p.BlockedPath,
-			CanAlways: p.CanAlways, AlwaysLabel: p.AlwaysLabel, FromSubagent: p.AgentID != "", CreatedAt: ls.asked[id]})
+			CanAlways: p.CanAlways, AlwaysLabel: p.AlwaysLabel, FromSubagent: p.AgentID != "", Feedback: p.Feedback,
+			Elicitation: p.Elicitation, CreatedAt: ls.asked[id]})
 	}
 	return items
 }
@@ -119,7 +127,10 @@ func (c *ChatService) Respond(sessionID, requestID string, answer PermissionAnsw
 	defer c.emitPending(ls)
 
 	var result map[string]any
-	if answer.Allow {
+	switch {
+	case p.Elicitation != nil:
+		result = elicitationResult(answer)
+	case answer.Allow:
 		input := map[string]any{}
 		_ = json.Unmarshal([]byte(p.Input), &input)
 		if p.ToolName == "AskUserQuestion" && answer.Answers != nil {
@@ -136,7 +147,7 @@ func (c *ChatService) Respond(sessionID, requestID string, answer PermissionAnsw
 		if len(updates) > 0 {
 			result["updatedPermissions"] = updates
 		}
-	} else {
+	default:
 		msg := answer.Message
 		if msg == "" {
 			switch p.ToolName {
@@ -156,10 +167,26 @@ func (c *ChatService) Respond(sessionID, requestID string, answer PermissionAnsw
 	if err := ls.conn.Respond(requestID, result); err != nil {
 		return err
 	}
-	if answer.Allow && answer.Mode != "" {
+	if answer.Allow && answer.Mode != "" && p.Elicitation == nil {
 		c.setMode(ls, answer.Mode)
 	}
 	return nil
+}
+
+// elicitationResult is the reply to an MCP server's request for input.
+func elicitationResult(answer PermissionAnswer) map[string]any {
+	switch {
+	case answer.Allow:
+		r := map[string]any{"action": "accept"}
+		if answer.Content != nil {
+			r["content"] = answer.Content
+		}
+		return r
+	case answer.Interrupt:
+		return map[string]any{"action": "cancel"}
+	default:
+		return map[string]any{"action": "decline"}
+	}
 }
 
 // setMode records a mode the user chose while answering (approving a plan).

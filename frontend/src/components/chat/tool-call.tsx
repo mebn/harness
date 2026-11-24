@@ -112,6 +112,7 @@ function Details({ name, args, part }: { name: string; args: Args | null; part: 
   switch (name) {
     case "Bash":
     case "PowerShell":
+    case "Shell":
       return (
         <>
           <pre className="mt-1 ml-2 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[11px] whitespace-pre-wrap select-text">
