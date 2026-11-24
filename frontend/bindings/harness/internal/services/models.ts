@@ -79,6 +79,31 @@ export interface ForkResult {
 }
 
 /**
+ * HotkeyInfo is the system-wide shortcut that opens the quick chat.
+ */
+export interface HotkeyInfo {
+    /**
+     * Spec as saved: "mod mod" (double tap), "ctrl+shift+space" (combination) or "off".
+     */
+    "spec": string;
+
+    /**
+     * How it's shown, e.g. "Ctrl Ctrl" or "⌘⇧Space"; empty when off.
+     */
+    "label": string;
+
+    /**
+     * Why it isn't working, if it isn't.
+     */
+    "error": string;
+
+    /**
+     * macOS: the System Settings pane that grants Input Monitoring (needed for double taps).
+     */
+    "settingsUrl": string;
+}
+
+/**
  * PendingRequest is a tool call waiting for the user's permission, a question the agent
  * asked (AskUserQuestion), a plan waiting for approval (ExitPlanMode), or an MCP server
  * asking for input (Elicitation set).

@@ -4,6 +4,7 @@ export {
   ChatService,
   FileService,
   GitService,
+  HotkeyService,
   ProjectService,
   SystemService,
   TerminalService,
@@ -13,6 +14,7 @@ export {
 export type {
   SystemInfo,
   FileEntry,
+  HotkeyInfo,
   PendingRequest,
   PermissionAnswer,
   RewindResult,
@@ -22,7 +24,7 @@ export type { Message, Part, Project, ProjectTree, Session } from "@bindings/har
 export type { Branch as GitBranch, File as GitFile, Status as GitStatus, Worktree } from "@bindings/harness/internal/gitx/models";
 export type { Info as ProviderInfo, Option } from "@bindings/harness/internal/provider/models";
 
-export { Dialogs, Events } from "@wailsio/runtime";
+export { Browser, Dialogs, Events } from "@wailsio/runtime";
 
 /** Emitted by the desktop window after it reconnects to the server; state may have moved on. */
 export const EVENT_SERVER_RECONNECTED = "server:reconnected";

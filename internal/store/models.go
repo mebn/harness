@@ -7,9 +7,10 @@ type Project struct {
 	Path     string `json:"path"`
 	Env      string `json:"env"` // "native" | "wsl", inferred from Path
 	Expanded bool   `json:"expanded"`
-	// AdminTerminals opens new terminals as administrator (Windows).
-	AdminTerminals bool  `json:"adminTerminals"`
-	CreatedAt      int64 `json:"createdAt"`
+	// RunAsAdmin runs the workspace's chats and new terminals as administrator (Windows
+	// folders). Stored in the admin_terminals column, its name from when it was terminals only.
+	RunAsAdmin bool  `json:"runAsAdmin"`
+	CreatedAt  int64 `json:"createdAt"`
 }
 
 // Session is one agent conversation inside a project.

@@ -10,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"harness/internal/desktop"
 	"harness/internal/server"
@@ -34,7 +37,34 @@ func main() {
 		}
 	}()
 
+	quickOnly := slices.Contains(os.Args[1:], quickArg)
+	var app *application.App
+	var quick *quickWindow
+
+	// The main window. It may be closed while the quick chat keeps this process running, and
+	// is opened again from the tray or by launching Harness.
+	var mu sync.Mutex
 	var window *application.WebviewWindow
+	showMain := func() {
+		mu.Lock()
+		w := window
+		if w == nil {
+			w = newMainWindow(app)
+			window = w
+			w.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+				mu.Lock()
+				if window == w {
+					window = nil
+				}
+				mu.Unlock()
+			})
+		}
+		mu.Unlock()
+		w.Restore()
+		w.Show()
+		w.Focus()
+	}
+
 	opts := application.Options{
 		Name:        "Harness",
 		Description: "A desktop harness for coding agents",
@@ -44,16 +74,18 @@ func main() {
 		},
 		Mac: application.MacOptions{
 			// Closing the window quits only this client; sessions keep running in the server.
+			// Once the quick chat exists (hidden, not closed) this process stays for it.
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		// Launching again focuses the open window (one per data directory).
+		// Launching again focuses the open window (one per data directory); with quickArg
+		// (from the server's hotkey) it shows or hides the quick chat instead.
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "harness-desktop-" + shortHash(dir),
-			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
-				if window != nil {
-					window.Restore()
-					window.Show()
-					window.Focus()
+			OnSecondInstanceLaunch: func(d application.SecondInstanceData) {
+				if slices.Contains(d.Args, quickArg) {
+					quick.Toggle()
+				} else {
+					showMain()
 				}
 			},
 		},
@@ -63,9 +95,39 @@ func main() {
 	if os.Getenv("HARNESS_DB") != "" {
 		opts.Windows.WebviewUserDataPath = filepath.Join(dir, "webview")
 	}
-	app := application.New(opts)
+	app = application.New(opts)
+	quick = newQuickWindow(app)
+	app.Event.On(eventQuickOpenChat, func(*application.CustomEvent) {
+		quick.Hide()
+		showMain()
+	})
 
-	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
+	if quickOnly {
+		quick.window() // created now (hidden) so the app starts with a window
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { quick.Show() })
+	} else {
+		showMain()
+	}
+
+	go bridge.RelayEvents(ctx, func(name string, data any) {
+		switch name {
+		case server.EventQuit:
+			// The server was quit from its tray: the window goes too.
+			app.Quit()
+		case server.EventQuickToggle:
+			quick.Toggle()
+		default:
+			app.Event.Emit(name, data)
+		}
+	})
+
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func newMainWindow(app *application.App) *application.WebviewWindow {
+	return app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Harness",
 		Width:     1440,
 		Height:    900,
@@ -81,19 +143,6 @@ func main() {
 		BackgroundColour: application.NewRGB(238, 238, 238),
 		URL:              "/",
 	})
-
-	go bridge.RelayEvents(ctx, func(name string, data any) {
-		// The server was quit from its tray: the window goes too.
-		if name == server.EventQuit {
-			app.Quit()
-			return
-		}
-		app.Event.Emit(name, data)
-	})
-
-	if err := app.Run(); err != nil {
-		log.Fatal(err)
-	}
 }
 
 func shortHash(s string) string {

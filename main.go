@@ -12,6 +12,10 @@ import (
 	"harness/internal/store"
 )
 
+// quickArg starts the desktop app with only the quick chat, or (to a running one) shows or
+// hides it. The server passes it when the quick chat's hotkey is pressed with no window open.
+const quickArg = "--quick"
+
 //go:embed all:frontend/dist
 var assets embed.FS
 

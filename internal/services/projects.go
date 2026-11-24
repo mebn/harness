@@ -46,7 +46,16 @@ func (p *ProjectService) AddProject(path string) (store.Project, error) {
 		Env:      string(platform.EnvForPath(path)),
 		Expanded: true,
 	}
-	return proj, p.store.InsertProject(&proj)
+	err := p.store.InsertProject(&proj)
+	p.changed()
+	return proj, err
+}
+
+// changed tells every window the sidebar tree changed.
+func (p *ProjectService) changed() {
+	if p.chat != nil {
+		p.chat.emit(EventTreeChanged, nil)
+	}
 }
 
 // RemoveProject forgets a workspace (its folder on disk is untouched) and its sessions.
@@ -63,7 +72,9 @@ func (p *ProjectService) RemoveProject(id string) error {
 			}
 		}
 	}
-	return p.store.DeleteProject(id)
+	err := p.store.DeleteProject(id)
+	p.changed()
+	return err
 }
 
 func (p *ProjectService) update(id string, fn func(*store.Project)) error {
@@ -72,7 +83,11 @@ func (p *ProjectService) update(id string, fn func(*store.Project)) error {
 		return err
 	}
 	fn(&proj)
-	return p.store.UpdateProject(proj)
+	if err := p.store.UpdateProject(proj); err != nil {
+		return err
+	}
+	p.changed()
+	return nil
 }
 
 func (p *ProjectService) RenameProject(id, name string) error {
@@ -83,9 +98,10 @@ func (p *ProjectService) SetExpanded(id string, expanded bool) error {
 	return p.update(id, func(x *store.Project) { x.Expanded = expanded })
 }
 
-// SetAdminTerminals chooses whether new terminals in the workspace run as administrator.
-func (p *ProjectService) SetAdminTerminals(id string, admin bool) error {
-	return p.update(id, func(x *store.Project) { x.AdminTerminals = admin })
+// SetRunAsAdmin chooses whether the workspace's chats and new terminals run as administrator
+// (Windows folders). Chats pick it up when their agent next starts; idle ones restart for it.
+func (p *ProjectService) SetRunAsAdmin(id string, admin bool) error {
+	return p.update(id, func(x *store.Project) { x.RunAsAdmin = admin })
 }
 
 // CreateSession starts a new session in the project's folder or one of its worktrees,
@@ -109,7 +125,9 @@ func (p *ProjectService) CreateSession(projectID, worktree string) (store.Sessio
 		info := p.providers.Default().Info()
 		sess.Provider, sess.Model, sess.Effort = info.ID, info.DefaultModel, info.DefaultEffort
 	}
-	return sess, p.store.InsertSession(&sess)
+	err := p.store.InsertSession(&sess)
+	p.changed()
+	return sess, err
 }
 
 // SetSessionWorktree moves a session that hasn't started into a worktree ("" = the project's
@@ -135,7 +153,11 @@ func (p *ProjectService) RenameSession(id, title string) error {
 		return err
 	}
 	sess.Title = strings.TrimSpace(title)
-	return p.store.UpdateSession(&sess)
+	if err := p.store.UpdateSession(&sess); err != nil {
+		return err
+	}
+	p.changed()
+	return nil
 }
 
 func (p *ProjectService) DeleteSession(id string) error {
@@ -143,7 +165,9 @@ func (p *ProjectService) DeleteSession(id string) error {
 		p.chat.sessionDeleted(id)
 	}
 	_ = p.files.RemoveSession(id)
-	return p.store.DeleteSession(id)
+	err := p.store.DeleteSession(id)
+	p.changed()
+	return err
 }
 
 // UpdateSessionSettings changes provider/model/effort/mode for future turns.

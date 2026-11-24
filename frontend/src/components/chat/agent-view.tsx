@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, Check, CircleX, Loader2 } from "lucide-react";
+import { Check, CircleX, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -121,9 +121,10 @@ function AgentDetails({ entry: { part, calls } }: { entry: AgentEntry }) {
   );
 }
 
-/** A chip listing a chat's subagents with their state; picking one opens it. */
+/** A chip listing a chat's running subagents, shown only while any run; picking one opens it. */
 export function AgentsOverview({ agents, onOpen }: { agents: AgentEntry[]; onOpen: (toolId: string) => void }) {
-  const running = agents.filter((a) => !a.part.done).length;
+  const running = agents.filter((a) => !a.part.done);
+  if (running.length === 0) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -131,15 +132,16 @@ export function AgentsOverview({ agents, onOpen }: { agents: AgentEntry[]; onOpe
           type="button"
           className="flex h-6 items-center gap-1.5 rounded-full border bg-background px-2.5 text-[11px] text-muted-foreground shadow-sm hover:text-foreground"
         >
-          {running > 0 ? <Loader2 className="size-3 animate-spin text-sky-500" /> : <Bot className="size-3" />}
-          {agents.length} {agents.length === 1 ? "agent" : "agents"}
-          {running > 0 && <span className="tabular-nums">· {running} running</span>}
+          <Loader2 className="size-3 animate-spin text-sky-500" />
+          <span className="tabular-nums">
+            {running.length} {running.length === 1 ? "agent" : "agents"} running
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[60vh] w-80">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Subagents in this chat</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Running subagents</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {agents.map(({ part }) => (
+        {running.map(({ part }) => (
           <DropdownMenuItem key={part.toolId} onSelect={() => onOpen(part.toolId!)} className="items-start text-xs">
             <StatusIcon part={part} className="mt-px" />
             <div className="min-w-0 flex-1">

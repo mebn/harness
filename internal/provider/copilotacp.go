@@ -124,7 +124,11 @@ func openCopilotConn(parent context.Context, req OpenRequest, ids *copilotSessio
 		writes: make(chan []byte, 64), done: make(chan struct{}), ready: make(chan struct{}),
 		settings: req.Settings, calls: map[string]chan rpcReply{}, options: map[string]*acpOption{},
 		perms: map[string]*acpPermission{}, tools: map[string]*acpToolCall{}}
-	cmd := platform.Command(ctx, req.Env, req.Dir, "copilot", "--acp")
+	cmd, err := platform.AgentCommand(ctx, req.Env, req.Dir, req.Admin, "copilot", "--acp")
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	if err := c.start(cmd); err != nil {
 		cancel()
 		return nil, err

@@ -21,6 +21,16 @@ const eventBuffer = 1024
 // they quit too instead of starting it again. A restart into a new build doesn't send it.
 const EventQuit = "server:quit"
 
+// EventQuickToggle asks the desktop app to show or hide the quick chat (its hotkey was pressed).
+const EventQuickToggle = "quick:toggle"
+
+// ClientHeader tells the server what kind of client opened the event stream; the desktop app
+// sends ClientDesktop.
+const (
+	ClientHeader  = "X-Harness-Client"
+	ClientDesktop = "desktop"
+)
+
 // quitNotice is how long a quitting server waits for EventQuit to reach the windows.
 const quitNotice = 300 * time.Millisecond
 
@@ -47,8 +57,16 @@ type Transport struct {
 	srv     *http.Server
 	once    sync.Once
 
-	mu      sync.Mutex
-	clients map[chan []byte]struct{}
+	mu       sync.Mutex
+	clients  map[chan []byte]struct{}
+	desktops int // clients that are the desktop app
+}
+
+// HasDesktop reports whether the desktop app is connected (and so receives events).
+func (t *Transport) HasDesktop() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.desktops > 0
 }
 
 func NewTransport(h *Host) *Transport {
@@ -134,14 +152,21 @@ func (t *Transport) serveEvents(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 
 	ch := make(chan []byte, eventBuffer)
+	desktop := r.Header.Get(ClientHeader) == ClientDesktop
 	t.mu.Lock()
 	t.clients[ch] = struct{}{}
+	if desktop {
+		t.desktops++
+	}
 	t.mu.Unlock()
 	defer func() {
 		t.mu.Lock()
 		if _, ok := t.clients[ch]; ok {
 			delete(t.clients, ch)
 			close(ch)
+		}
+		if desktop {
+			t.desktops--
 		}
 		t.mu.Unlock()
 	}()

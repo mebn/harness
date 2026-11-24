@@ -13,6 +13,7 @@ import { useApp } from "@/stores/app-store";
 import { useLayout } from "@/stores/layout-store";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { useGroups } from "@/stores/group-store";
+import { useQuickLink } from "@/hooks/use-quick-link";
 import {
   WINDOW_CONTROLS_WIDTH,
   dragStyle,
@@ -81,6 +82,7 @@ export function AppShell() {
   // Keep group layouts in step with the backend's projects and sessions.
   const tree = useApp((s) => s.tree);
   useEffect(() => useGroups.getState().sync(tree), [tree]);
+  useQuickLink();
 
   return (
     <div className="app-backdrop flex h-full">

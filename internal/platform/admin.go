@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -18,6 +19,22 @@ var ErrNoElevation = errors.New("running as administrator needs sudo for Windows
 func AdminShellCommand(dir string) (name string, args []string, err error) {
 	shell, shellArgs := ShellCommand(EnvNative, dir)
 	return AdminCommand(dir, shell, shellArgs...)
+}
+
+// AgentCommand is Command for an agent CLI, run as administrator when admin is set (native
+// Windows only; WSL commands ignore it). Its stdin and stdout stay pipes to this process.
+func AgentCommand(ctx context.Context, env Env, dir string, admin bool, name string, args ...string) (*exec.Cmd, error) {
+	if !admin || env.Normalize() == EnvWSL {
+		return Command(ctx, env, dir, name, args...), nil
+	}
+	n, a, err := AdminCommand(dir, name, args...)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, n, a...)
+	cmd.Dir = dir
+	hideWindow(cmd)
+	return cmd, nil
 }
 
 // AdminCommand wraps a native Windows command so it runs as administrator in dir, after a

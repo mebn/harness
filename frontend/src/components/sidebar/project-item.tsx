@@ -47,7 +47,7 @@ export function ProjectItem({
   const newGroup = useGroups((s) => s.newGroup);
   const rename = useApp((s) => s.renameProject);
   const remove = useApp((s) => s.removeProject);
-  const setAdminTerminals = useApp((s) => s.setAdminTerminals);
+  const setRunAsAdmin = useApp((s) => s.setRunAsAdmin);
   const elevatable = useApp((s) => canElevate(project, s.system.os));
   const now = useNow();
   // Folded, the header shows the most urgent state among its sessions.
@@ -143,10 +143,10 @@ export function ProjectItem({
                 <DropdownMenuItem onSelect={() => setEditing(true)}>Rename</DropdownMenuItem>
                 {elevatable && (
                   <DropdownMenuCheckboxItem
-                    checked={project.adminTerminals}
-                    onCheckedChange={(v) => void setAdminTerminals(project.id, v === true)}
+                    checked={project.runAsAdmin}
+                    onCheckedChange={(v) => void setRunAsAdmin(project.id, v === true)}
                   >
-                    Terminals as admin
+                    Run as administrator
                   </DropdownMenuCheckboxItem>
                 )}
                 <DropdownMenuSeparator />

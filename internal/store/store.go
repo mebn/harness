@@ -128,7 +128,7 @@ func (s *Store) Tree() ([]ProjectTree, error) {
 	index := map[string]int{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.AdminTerminals, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.RunAsAdmin, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		index[p.ID] = len(tree)
@@ -149,7 +149,7 @@ func (s *Store) Tree() ([]ProjectTree, error) {
 func (s *Store) Project(id string) (Project, error) {
 	var p Project
 	err := s.db.QueryRow(`SELECT id, name, path, env, expanded, admin_terminals, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.AdminTerminals, &p.CreatedAt)
+		Scan(&p.ID, &p.Name, &p.Path, &p.Env, &p.Expanded, &p.RunAsAdmin, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -159,13 +159,13 @@ func (s *Store) Project(id string) (Project, error) {
 func (s *Store) InsertProject(p *Project) error {
 	p.CreatedAt = now()
 	_, err := s.db.Exec(`INSERT INTO projects (id, name, path, env, expanded, admin_terminals, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.Env, p.Expanded, p.AdminTerminals, p.CreatedAt)
+		p.ID, p.Name, p.Path, p.Env, p.Expanded, p.RunAsAdmin, p.CreatedAt)
 	return err
 }
 
 func (s *Store) UpdateProject(p Project) error {
 	_, err := s.db.Exec(`UPDATE projects SET name = ?, path = ?, env = ?, expanded = ?, admin_terminals = ? WHERE id = ?`,
-		p.Name, p.Path, p.Env, p.Expanded, p.AdminTerminals, p.ID)
+		p.Name, p.Path, p.Env, p.Expanded, p.RunAsAdmin, p.ID)
 	return err
 }
 
@@ -304,6 +304,12 @@ func (s *Store) SetMessageUUIDs(id, cliUUID, prevUUID string) error {
 // DeleteMessagesFrom removes a session's messages from the given one on (rewinding the chat).
 func (s *Store) DeleteMessagesFrom(sessionID string, m Message) error {
 	_, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ? AND (created_at > ? OR id = ?)`, sessionID, m.CreatedAt, m.ID)
+	return err
+}
+
+// DeleteMessages removes all of a session's messages (clearing the chat).
+func (s *Store) DeleteMessages(sessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID)
 	return err
 }
 

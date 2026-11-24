@@ -231,9 +231,9 @@ func serverEnv() []string {
 // StartDetached starts exe so it outlives this process (no console, own process group,
 // outside the parent's job object when allowed). out receives its output; nil discards it.
 // env nil means this process's environment. The caller may Wait on the returned command.
-func StartDetached(exe string, out *os.File, env []string) (*exec.Cmd, error) {
+func StartDetached(exe string, out *os.File, env []string, args ...string) (*exec.Cmd, error) {
 	start := func(breakaway bool) (*exec.Cmd, error) {
-		cmd := exec.Command(exe)
+		cmd := exec.Command(exe, args...)
 		cmd.Dir = filepath.Dir(exe)
 		cmd.Env = env
 		if out != nil {

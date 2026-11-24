@@ -5,6 +5,12 @@
 - `README.md` holds only the title and how to run the app. Don't add architecture, notes or
   anything else there; documentation for working on the code goes in this file.
 - Don't add personal tooling (launch scripts, shortcuts) to the repo.
+- Agents usually run inside Harness itself, often a `wails3 dev` build of this checkout. Never
+  quit, restart or replace the running Harness window or server: that kills the agent's own
+  session. `wails3 dev` rebuilds and restarts on every Go change, so for longer work use a
+  separate git worktree outside the watched folder, and copy the changes back when done. To
+  run or test the app, start a separate instance with its own `HARNESS_DB` (its own data
+  directory, server and WebView profile) and binaries built outside `bin/`.
 
 ## What it is
 
@@ -45,6 +51,25 @@ Otherwise the old server keeps running until a later start finds it idle. This i
 Harness be developed from inside itself with `wails3 dev`: rebuilds restart only the window.
 The server log is `<data dir>/server.log`.
 
+### Quick chat
+
+Double-tapping Ctrl (⌘ on macOS) anywhere opens the quick chat: a floating, always-on-top,
+transparent window with one chat, like Spotlight (the design comes from the earlier cmdcmd
+app). The hotkey lives in the server, which keeps running when windows close
+(`internal/hotkey` for double taps through a keyboard hook / event tap,
+`services.HotkeyService` for combinations through Wails' global shortcuts; the choice is in
+Settings › Keyboard shortcuts and saved in the database). A press emits `quick:toggle` to the
+connected desktop app (`Transport.HasDesktop`), or starts `harness --quick` when none is
+connected, which opens only the quick chat. `quick.go` owns the window (`/?quick`, rendered
+by `components/quick`); once it exists the desktop process keeps running after the main window
+closes, so later presses are instant, and the main window is reopened on demand. It shows the
+chat last focused in either window (`lib/quick.ts`, in localStorage) and hides on Esc or when
+it loses focus (except to its own file picker). Chats started in it get a group in the main
+window once something is sent. On Windows the server calls `AllowSetForegroundWindow` and
+the window joins the foreground thread's input to take focus from the app in front. On macOS
+the window is a non-activating panel, double taps need Input Monitoring, and the transparent
+webview needs `-tags private_mac_apis` (set in `build/darwin/Taskfile.yml`).
+
 A browser can use the server directly at `http://127.0.0.1:<port>/?token=<token>`
 (values from `server.json`); window controls and the folder picker only work in the desktop app.
 
@@ -54,7 +79,9 @@ A browser can use the server directly at `http://127.0.0.1:<port>/?token=<token>
 main.go                     shared: embedded frontend, data dir
 main_server.go              server: store, providers, services (+ server_tray.go)
 main_desktop.go             window: finds/starts the server, proxies to it
+quick*.go                   window: the quick chat's floating window
 internal/
+  hotkey/                   system-wide double-tap detection (Windows hook, macOS event tap)
   platform/                 native vs WSL execution, path translation, shell choice
   store/                    SQLite (pure Go) persistence: projects, sessions, messages
   provider/                 Provider/Conn interfaces + Claude Code (stream-json) / Copilot (ACP) adapters
@@ -69,11 +96,13 @@ internal/
     files.go                file explorer (sandboxed to project root)
     terminal.go             PTY shells (ConPTY on Windows) via go-pty
     system.go               OS info, folder picker
+    hotkey.go               the quick chat's hotkey
 frontend/src/
   stores/                   zustand: app (data), groups and layout, settings, theme, sort
   components/sidebar/       workspaces and groups (both drag to reorder)
   components/workspace/     groups of windows and tabs
   components/chat/          message list, tool calls, composer and pickers
+  components/quick/         the quick chat window
   components/panel/         tab contents: files, changes, terminal (xterm.js), browser
   components/settings/      settings dialog
   components/layout/        shell, startup screen, custom title bar and window controls
@@ -107,12 +136,16 @@ frontend/src/
   `<data dir>/copilot-sessions.json` maps Harness's ids to Copilot's. Copilot can't take
   messages mid-turn, rewind or fork, and a denial can't carry a message.
 - Permission modes: Ask permissions, Accept edits, Plan, Full access.
-- `/clear` is handled by Harness (a fresh conversation in the same chat); other slash commands
-  go to Claude Code.
+- `/clear` (and `/new`, `/reset`) is handled by Harness: it empties the chat and starts a fresh
+  provider conversation in it. Other slash commands go to Claude Code.
 - Closing a tab, window or group that has a chat still working or a terminal running a command
   asks first (`lib/close-guard.ts`; pressing the close shortcut again confirms). Terminals check
   for child processes of the shell (`TerminalService.Busy`), which can't be seen for WSL or
   administrator shells, so those never ask.
+- Run as administrator (a workspace's menu, Windows folders) runs its chats' agent and new
+  terminals elevated, through sudo for Windows (inline) or gsudo, each after a UAC prompt
+  (`platform.AgentCommand`, `AdminShellCommand`). A chat's agent restarts for it when idle.
+  Stored as `projects.admin_terminals`, named from when it covered terminals only.
 - Workspaces show an icon found in their folder (`ProjectService.Icon`: app icons, favicons,
   logos; see `iconCandidates` in `project_icon.go`), else a folder.
 - Sidebar lists reorder live while dragging (`sidebar/use-live-reorder.ts`, with `hooks/use-flip.ts`

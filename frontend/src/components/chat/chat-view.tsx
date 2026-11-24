@@ -33,7 +33,7 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
 
   const shown = useMemo(() => settleStale(messages, running), [messages, running]);
 
-  // Subagents: a chip above the input lists them, and one opens in a dialog.
+  // Subagents: a chip above the input lists the running ones, and one opens in a dialog.
   const agents = useMemo(() => collectAgents(shown), [shown]);
   const [viewing, setViewing] = useState<string | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
@@ -59,7 +59,7 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
         <Composer
           session={session}
           visible={visible}
-          status={agents.length > 0 && <AgentsOverview agents={agents} onOpen={openAgent} />}
+          status={<AgentsOverview agents={agents} onOpen={openAgent} />}
         />
         <AgentDialog entry={agents.find((a) => a.part.toolId === viewing)} open={viewOpen} onOpenChange={setViewOpen} />
       </div>
@@ -72,7 +72,7 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
  * server restarted mid-turn) show as finished, not spinning forever. While a turn runs, only
  * its own replies, after the latest user message, can still be in progress.
  */
-function settleStale(messages: Message[], running: boolean): Message[] {
+export function settleStale(messages: Message[], running: boolean): Message[] {
   let live = messages.length;
   if (running) {
     while (live > 0 && messages[live - 1].role !== "user") live--;

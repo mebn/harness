@@ -144,7 +144,10 @@ func (b *Bridge) RelayEvents(ctx context.Context, emit func(name string, data an
 		}
 		u := "ws://" + strings.TrimPrefix(info.BaseURL(), "http://") + "/wails/events"
 		conn, _, err := websocket.Dial(ctx, u, &websocket.DialOptions{
-			HTTPHeader: http.Header{server.TokenHeader: []string{info.Token}},
+			HTTPHeader: http.Header{
+				server.TokenHeader:  []string{info.Token},
+				server.ClientHeader: []string{server.ClientDesktop},
+			},
 		})
 		if err != nil {
 			b.client.Invalidate(info)

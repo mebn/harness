@@ -256,3 +256,93 @@
 .layer-hidden * {
   transition: none !important;
 }
+
+/* The chat input box (cmdcmd's): a soft lift inside panes, a full shadow when it floats alone
+   in the quick chat. */
+.composer-box {
+  box-shadow: 0 2px 10px oklch(0 0 0 / 6%);
+}
+.composer-box:focus-within {
+  border-color: color-mix(in oklch, var(--ring) 60%, transparent);
+}
+.dark .composer-box {
+  box-shadow: 0 2px 10px oklch(0 0 0 / 25%);
+}
+
+/* ---- quick chat (components/quick) ----
+   The window is an invisible, fixed-size stage. One card holds the chat and, inset at its
+   bottom, the input box. Collapsed, only the input box shows: the card's surface is
+   invisible and the chat area has no height. Expanding fades the surface in and grows the
+   chat upward out of the input. */
+html.quick,
+html.quick body {
+  background: transparent;
+}
+.quick-card {
+  --quick-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --quick-inset: 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  padding: 0 var(--quick-inset);
+  border-radius: 32px;
+  background: transparent;
+  border: 0.5px solid transparent;
+  transition:
+    padding 480ms var(--quick-ease),
+    background-color 360ms var(--quick-ease),
+    border-color 360ms var(--quick-ease),
+    box-shadow 360ms var(--quick-ease);
+}
+.quick-card.expanded {
+  padding: var(--quick-inset);
+  background: var(--background);
+  border-color: var(--pane-border);
+  box-shadow: var(--quick-shadow);
+}
+.quick-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    height 480ms var(--quick-ease),
+    margin-bottom 480ms var(--quick-ease),
+    opacity 260ms ease;
+}
+.quick-card.expanded .quick-chat {
+  height: calc(100vh - 340px);
+  flex-shrink: 1;
+  margin-bottom: var(--quick-inset);
+  opacity: 1;
+  pointer-events: auto;
+}
+html.quick {
+  --quick-shadow: 0 16px 40px -12px oklch(0 0 0 / 22%), 0 2px 8px oklch(0 0 0 / 7%);
+}
+html.quick.dark {
+  --quick-shadow: 0 16px 40px -12px oklch(0 0 0 / 55%), 0 2px 8px oklch(0 0 0 / 22%);
+}
+.quick-card .composer-box {
+  border-radius: 22px; /* concentric with the card: its radius minus the inset */
+  box-shadow: var(--quick-shadow);
+  transition: box-shadow 360ms var(--quick-ease);
+}
+.quick-card.expanded .composer-box {
+  box-shadow: 0 2px 10px oklch(0 0 0 / 12%);
+}
+/* Dragging the card's empty space moves the window; anything you click or select doesn't. */
+.quick-card {
+  --wails-draggable: drag;
+}
+.quick-card .quick-chat,
+.quick-card .composer-box,
+.quick-card button,
+.quick-card [role="dialog"] {
+  --wails-draggable: no-drag;
+}

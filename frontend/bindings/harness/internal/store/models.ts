@@ -107,9 +107,10 @@ export interface Project {
     "expanded": boolean;
 
     /**
-     * AdminTerminals opens new terminals as administrator (Windows).
+     * RunAsAdmin runs the workspace's chats and new terminals as administrator (Windows
+     * folders). Stored in the admin_terminals column, its name from when it was terminals only.
      */
-    "adminTerminals": boolean;
+    "runAsAdmin": boolean;
     "createdAt": number;
 }
 

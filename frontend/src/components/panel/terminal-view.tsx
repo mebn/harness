@@ -87,18 +87,23 @@ export function TerminalView({
     ];
 
     if (admin) term.write("\x1b[2mStarting as administrator — confirm the Windows prompt…\x1b[0m\r\n");
-    TerminalService.Start(projectId, startIn.current, admin, term.cols, term.rows)
-      .then((tid) => {
-        if (disposed) return void TerminalService.Close(tid);
-        id = tid;
-        early.filter((c) => c.id === id).forEach((c) => term.write(decode(c.data)));
-        early.length = 0;
-        cleanups.push(trackTerminal(tabId, id));
-        const input = term.onData((d) => void TerminalService.Write(id, d));
-        const resize = term.onResize(({ cols, rows }) => void TerminalService.Resize(id, cols, rows));
-        cleanups.push(() => input.dispose(), () => resize.dispose());
-      })
-      .catch((err) => term.write(`\x1b[31m${String(err)}\x1b[0m\r\n`));
+    // Start on the next tick: React's development double mount (StrictMode) unmounts this
+    // instance at once, and starting right away ran two shells (two UAC prompts as admin).
+    const start = setTimeout(() => {
+      if (disposed) return;
+      TerminalService.Start(projectId, startIn.current, admin, term.cols, term.rows)
+        .then((tid) => {
+          if (disposed) return void TerminalService.Close(tid);
+          id = tid;
+          early.filter((c) => c.id === id).forEach((c) => term.write(decode(c.data)));
+          early.length = 0;
+          cleanups.push(trackTerminal(tabId, id));
+          const input = term.onData((d) => void TerminalService.Write(id, d));
+          const resize = term.onResize(({ cols, rows }) => void TerminalService.Resize(id, cols, rows));
+          cleanups.push(() => input.dispose(), () => resize.dispose());
+        })
+        .catch((err) => term.write(`\x1b[31m${String(err)}\x1b[0m\r\n`));
+    }, 0);
 
     const observer = new ResizeObserver(() => {
       if (container.current?.offsetWidth) fit.fit();
@@ -107,6 +112,7 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      clearTimeout(start);
       observer.disconnect();
       cleanups.forEach((c) => c());
       if (id) void TerminalService.Close(id);

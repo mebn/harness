@@ -59,6 +59,7 @@ type liveSession struct {
 	canSteer          bool
 	interactive       bool
 	settings          provider.Settings
+	admin             bool // the agent runs as administrator
 	closing           bool // closed on purpose: the process ending is not an error
 	dead              bool // the conversation has ended
 
@@ -341,7 +342,7 @@ type AttachmentInput struct {
 
 // Send starts a turn with the session's current provider settings. While a turn is running
 // the message is queued instead, and its id returned ("" when a turn started).
-// "/clear" starts a fresh provider conversation in the same chat.
+// "/clear" (or "/new", "/reset") empties the chat and starts a fresh provider conversation.
 func (c *ChatService) Send(sessionID, prompt string, attachments []AttachmentInput) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" && len(attachments) == 0 {
@@ -351,7 +352,12 @@ func (c *ChatService) Send(sessionID, prompt string, attachments []AttachmentInp
 		return "", err
 	}
 	if isClearCommand(prompt) && len(attachments) == 0 {
-		return "", c.Clear(sessionID)
+		if err := c.Clear(sessionID); err != nil {
+			return "", err
+		}
+		// The window marks a chat running as it sends; no turn started, so say so.
+		c.emit(EventChatStatus, ChatStatus{SessionID: sessionID, Running: false})
+		return "", nil
 	}
 	saved, err := c.saveAttachments(sessionID, attachments)
 	if err != nil {
@@ -444,9 +450,15 @@ func (c *ChatService) ensureLive(sess store.Session) (*liveSession, error) {
 	defer c.openMu.Unlock()
 	settings := provider.Settings{Model: sess.Model, Effort: sess.Effort, Mode: sess.Mode, Fast: sess.Fast}
 
+	loc, err := locate(c.store, sess.ProjectID, sess.Worktree)
+	if err != nil {
+		return nil, err
+	}
+
 	c.mu.Lock()
 	ls := c.live[sess.ID]
-	if ls != nil && (ls.providerID != sess.Provider || ls.providerSessionID != sess.ProviderSessionID) {
+	// A different provider or conversation, or Run as administrator switched: start the agent again.
+	if ls != nil && (ls.providerID != sess.Provider || ls.providerSessionID != sess.ProviderSessionID || ls.admin != loc.Admin) {
 		if ls.turn != nil {
 			c.mu.Unlock()
 			return nil, errBusy
@@ -468,16 +480,12 @@ func (c *ChatService) ensureLive(sess store.Session) (*liveSession, error) {
 	}
 	c.mu.Unlock()
 
-	loc, err := locate(c.store, sess.ProjectID, sess.Worktree)
-	if err != nil {
-		return nil, err
-	}
 	prov, ok := c.providers.Get(sess.Provider)
 	if !ok {
 		return nil, errors.New("unknown provider: " + sess.Provider)
 	}
 	conn, err := prov.Open(context.Background(), provider.OpenRequest{
-		Dir: loc.Dir, Env: loc.Env, Settings: settings, SessionID: sess.ProviderSessionID,
+		Dir: loc.Dir, Env: loc.Env, Admin: loc.Admin, Settings: settings, SessionID: sess.ProviderSessionID,
 		Resume: sess.Started && sess.ForkFrom == "", ForkFrom: sess.ForkFrom, ResumeAt: sess.ResumeAt, LastUUID: sess.LastUUID,
 	})
 	if err != nil {
@@ -485,7 +493,7 @@ func (c *ChatService) ensureLive(sess store.Session) (*liveSession, error) {
 	}
 	info := prov.Info()
 	ls = &liveSession{sessionID: sess.ID, providerID: sess.Provider, providerSessionID: sess.ProviderSessionID,
-		dir: loc.Dir, conn: conn, canSteer: info.Steer, interactive: info.Interactive, settings: settings,
+		dir: loc.Dir, admin: loc.Admin, conn: conn, canSteer: info.Steer, interactive: info.Interactive, settings: settings,
 		permissions: map[string]*provider.Permission{}, asked: map[string]int64{}}
 	c.mu.Lock()
 	c.live[sess.ID] = ls

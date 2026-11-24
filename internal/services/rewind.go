@@ -12,8 +12,7 @@ import (
 	"harness/internal/store"
 )
 
-// Clear starts a fresh provider conversation in the chat (/clear). Earlier messages stay
-// visible above a divider but are no longer part of what the agent sees.
+// Clear starts a fresh provider conversation in the chat (/clear) and empties the chat.
 func (c *ChatService) Clear(sessionID string) error {
 	if err := c.closeIdle(sessionID); err != nil {
 		return err
@@ -29,11 +28,11 @@ func (c *ChatService) Clear(sessionID string) error {
 	if err := c.store.UpdateSession(&sess); err != nil {
 		return err
 	}
+	if err := c.store.DeleteMessages(sessionID); err != nil {
+		return err
+	}
 	c.emit(EventSessionUpdated, sess)
-	msg := store.Message{ID: uuid.NewString(), SessionID: sessionID, Role: "event", CreatedAt: stamp(),
-		Parts: []store.Part{{Type: "cleared", Text: "Conversation cleared"}}}
-	_ = c.store.SaveMessage(msg)
-	c.emit(EventChatMessage, msg)
+	c.emit(EventChatReload, ChatStatus{SessionID: sessionID})
 	return nil
 }
 
@@ -249,6 +248,7 @@ func (c *ChatService) Fork(sessionID, messageID string) (ForkResult, error) {
 		x.CLIUUID, x.PrevUUID = "", ""
 		_ = c.store.SaveMessage(x)
 	}
+	c.emit(EventTreeChanged, nil)
 	return ForkResult{Session: fork, Text: messageText(m)}, nil
 }
 

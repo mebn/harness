@@ -6,6 +6,9 @@ includes:
 vars:
   # Docker image for cross-compilation (used when building on non-macOS)
   CROSS_IMAGE: wails-cross
+  # private_mac_apis lets a webview be transparent: the quick chat's window is an invisible
+  # stage around its cards. Fine for direct distribution, not the App Store.
+  EXTRA_TAGS: '{{.EXTRA_TAGS | default "private_mac_apis"}}'
 
 tasks:
   build:

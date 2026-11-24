@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"harness/internal/server"
+	"harness/internal/services"
 )
 
 //go:embed build/appicon.png
@@ -23,12 +24,15 @@ var trayIcon []byte
 const trayRefresh = 2 * time.Second
 
 // setupTray shows the server in the Windows notification area / macOS menu bar:
-// what it's doing, a way to open the window, and a way to quit it.
-func setupTray(app *application.App, host *server.Host, transport *server.Transport) {
+// what it's doing, a way to open the window or the quick chat, and a way to quit it. It also
+// starts the quick chat's hotkey.
+func setupTray(app *application.App, host *server.Host, transport *server.Transport, hotkeys *services.HotkeyService) {
+	toggleQuick := func() { toggleQuickChat(transport) }
 	menu := application.NewMenu()
 	status := menu.Add("Starting…").SetEnabled(false)
 	menu.AddSeparator()
 	menu.Add("Open Harness").OnClick(func(*application.Context) { openWindow() })
+	quickItem := menu.Add("Quick chat").OnClick(func(*application.Context) { toggleQuick() })
 	menu.AddSeparator()
 	// Windows close along with the server.
 	quit := menu.Add("Quit Harness Server").OnClick(func(*application.Context) { go transport.QuitWithWindows(app.Quit) })
@@ -45,10 +49,15 @@ func setupTray(app *application.App, host *server.Host, transport *server.Transp
 	update := func() {
 		runs, terms := host.Activity()
 		text := activityText(runs, terms)
-		if text == last {
+		quick := "Quick chat"
+		if label := hotkeys.Get().Label; label != "" {
+			quick += "  (" + label + ")"
+		}
+		if text+quick == last {
 			return
 		}
-		last = text
+		last = text + quick
+		quickItem.SetLabel(quick)
 		status.SetLabel(text)
 		if runs > 0 {
 			quit.SetLabel(fmt.Sprintf("Quit Harness Server (stops %s)", plural(runs, "session")))
@@ -61,6 +70,7 @@ func setupTray(app *application.App, host *server.Host, transport *server.Transp
 	// Menus can only change on the main thread, which exists once the app runs. Calling
 	// InvokeSync before that crashes the server.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		services.StartHotkey(hotkeys, app.GlobalShortcut, toggleQuick)
 		application.InvokeSync(update)
 		go func() {
 			for range time.Tick(trayRefresh) {
@@ -88,9 +98,22 @@ func plural(n int, word string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
+// toggleQuickChat shows or hides the quick chat: through the connected desktop app, or by
+// starting it with only the quick chat.
+func toggleQuickChat(transport *server.Transport) {
+	allowForeground()
+	if transport.HasDesktop() {
+		transport.Emit(server.EventQuickToggle, nil)
+		return
+	}
+	launchDesktop(quickArg)
+}
+
 // openWindow launches the desktop app next to this binary. If it's already open, its
 // single-instance handling focuses the existing window.
-func openWindow() {
+func openWindow() { launchDesktop() }
+
+func launchDesktop(args ...string) {
 	exe := os.Getenv("HARNESS_DESKTOP_EXE")
 	if exe == "" {
 		self, err := os.Executable()
@@ -104,7 +127,7 @@ func openWindow() {
 		}
 		exe = filepath.Join(filepath.Dir(self), name)
 	}
-	cmd, err := server.StartDetached(exe, nil, nil)
+	cmd, err := server.StartDetached(exe, nil, nil, args...)
 	if err != nil {
 		log.Printf("open window: %v", err)
 		return

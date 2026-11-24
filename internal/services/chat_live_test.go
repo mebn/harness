@@ -273,6 +273,9 @@ func TestClearStartsFresh(t *testing.T) {
 	if s.ProviderSessionID == "conv-1" || s.Started {
 		t.Fatalf("session: %+v", s)
 	}
+	if msgs, _ := c.store.Messages(id); len(msgs) != 0 {
+		t.Fatalf("chat not emptied: %d messages", len(msgs))
+	}
 	liveTurn(t, c, p, id, "two", "", "b1")
 	p.mu.Lock()
 	n, last := len(p.opens), p.opens[len(p.opens)-1]

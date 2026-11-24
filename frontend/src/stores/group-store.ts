@@ -124,7 +124,7 @@ async function createTab(kind: TabKind | undefined, projectId: string, worktree?
   if (kind === "terminal") {
     const { tree, system } = useApp.getState();
     const project = tree.find((n) => n.project.id === projectId)?.project;
-    return { id: uid("tab"), kind, admin: !!project && canElevate(project, system.os) && project.adminTerminals };
+    return { id: uid("tab"), kind, admin: !!project && canElevate(project, system.os) && project.runAsAdmin };
   }
   if (kind === "chat") {
     const session = await useApp.getState().newSession(projectId, worktree);
@@ -316,6 +316,8 @@ type GroupState = {
   renameGroup: (groupId: string, title: string) => void;
   /** Opens a chat: its existing tab if any, else a new group for it. */
   openChat: (session: Session) => void;
+  /** Gives a chat started elsewhere (the quick chat) a group, without switching to it. */
+  adoptChat: (session: Session) => void;
   goToGroup: (index: number) => void;
   cycleGroup: (delta: number) => void;
 
@@ -498,6 +500,12 @@ export const useGroups = create<GroupState>((set, get) => {
       const g = makeGroup(session.projectId, [{ id: uid("tab"), kind: "chat", sessionId: session.id }], Date.now(), session.worktree);
       set({ groups: [...get().groups, g] });
       get().reveal(g.id);
+    },
+
+    adoptChat: (session) => {
+      if (get().groups.some((g) => tabsOf(g.root).some((t) => t.sessionId === session.id))) return;
+      const g = makeGroup(session.projectId, [{ id: uid("tab"), kind: "chat", sessionId: session.id }], Date.now(), session.worktree);
+      set({ groups: [...get().groups, g] });
     },
 
     goToGroup: (index) => {

@@ -26,8 +26,7 @@ import * as store$0 from "../store/models.js";
 import * as $models from "./models.js";
 
 /**
- * Clear starts a fresh provider conversation in the chat (/clear). Earlier messages stay
- * visible above a divider but are no longer part of what the agent sees.
+ * Clear starts a fresh provider conversation in the chat (/clear) and empties the chat.
  */
 export function Clear(sessionID: string): $CancellablePromise<void> {
     return $Call.ByID(17718114, sessionID);
@@ -118,7 +117,7 @@ export function SearchMessages(query: string): $CancellablePromise<store$0.Messa
 /**
  * Send starts a turn with the session's current provider settings. While a turn is running
  * the message is queued instead, and its id returned ("" when a turn started).
- * "/clear" starts a fresh provider conversation in the same chat.
+ * "/clear" (or "/new", "/reset") empties the chat and starts a fresh provider conversation.
  */
 export function Send(sessionID: string, prompt: string, attachments: $models.AttachmentInput[] | null): $CancellablePromise<string> {
     return $Call.ByID(2939044847, sessionID, prompt, attachments);

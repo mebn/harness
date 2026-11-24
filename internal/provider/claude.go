@@ -91,7 +91,11 @@ func (Claude) Open(ctx context.Context, req OpenRequest) (Conn, error) {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	cmd := platform.Command(ctx, req.Env, req.Dir, "claude", args...)
+	cmd, err := platform.AgentCommand(ctx, req.Env, req.Dir, req.Admin, "claude", args...)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	// File checkpoints make rewind_files work (the SDK sets this for enableFileCheckpointing).
 	cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true")
 	if req.Env.Normalize() == platform.EnvWSL {

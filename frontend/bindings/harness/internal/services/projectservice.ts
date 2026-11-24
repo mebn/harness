@@ -53,15 +53,16 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
     return $Call.ByID(2801526184, id, title);
 }
 
-/**
- * SetAdminTerminals chooses whether new terminals in the workspace run as administrator.
- */
-export function SetAdminTerminals(id: string, admin: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3308270914, id, admin);
-}
-
 export function SetExpanded(id: string, expanded: boolean): $CancellablePromise<void> {
     return $Call.ByID(2578190055, id, expanded);
+}
+
+/**
+ * SetRunAsAdmin chooses whether the workspace's chats and new terminals run as administrator
+ * (Windows folders). Chats pick it up when their agent next starts; idle ones restart for it.
+ */
+export function SetRunAsAdmin(id: string, admin: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3264296238, id, admin);
 }
 
 /**

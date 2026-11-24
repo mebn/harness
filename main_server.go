@@ -77,6 +77,7 @@ func main() {
 	usageSvc := services.NewUsageService(db, emit)
 	chat := services.NewChatService(db, providers, usageSvc, files, emit)
 	terms := services.NewTerminalService(db, emit)
+	hotkeys := services.NewHotkeyService(db)
 
 	app := application.New(application.Options{
 		Name:        "Harness Server",
@@ -89,6 +90,7 @@ func main() {
 			application.NewService(services.NewFileService(db)),
 			application.NewService(services.NewGitService(db)),
 			application.NewService(terms),
+			application.NewService(hotkeys),
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
@@ -103,7 +105,7 @@ func main() {
 	})
 	host.SetHooks(func() (int, int) { return services.Activity(chat, terms) }, app.Quit)
 	defer host.Close()
-	setupTray(app, host, transport)
+	setupTray(app, host, transport, hotkeys)
 	log.Printf("server listening on %s (pid %d)", host.Info.BaseURL(), host.Info.PID)
 
 	if err := app.Run(); err != nil {

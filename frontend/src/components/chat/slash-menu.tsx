@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /** Handled by Harness itself, so always offered. */
 const LOCAL: SlashCommand[] = [
-  { name: "clear", description: "Start a fresh conversation in this chat", argumentHint: "", aliases: ["new", "reset"], builtin: true },
+  { name: "clear", description: "Clear this chat and start a fresh conversation", argumentHint: "", aliases: ["new", "reset"], builtin: true },
 ];
 
 /** The command being typed: "/name" with no space yet, or null. */

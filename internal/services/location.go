@@ -24,6 +24,13 @@ var prefixes sync.Map // project path -> string
 type location struct {
 	Dir string
 	Env platform.Env
+	// Admin: agents run as administrator (the workspace's Run as administrator, Windows folders).
+	Admin bool
+}
+
+// runsAsAdmin reports whether a workspace's agents run as administrator.
+func runsAsAdmin(proj store.Project) bool {
+	return proj.RunAsAdmin && platform.IsWindows() && platform.EnvForPath(proj.Path).Normalize() == platform.EnvNative
 }
 
 // repoRoot returns the repository root (as a host path) and the project's prefix inside it.
@@ -63,8 +70,9 @@ func locate(s *store.Store, projectID, worktree string) (location, error) {
 		return location{}, err
 	}
 	env := platform.EnvForPath(proj.Path)
+	admin := runsAsAdmin(proj)
 	if worktree == "" {
-		return location{Dir: proj.Path, Env: env}, nil
+		return location{Dir: proj.Path, Env: env, Admin: admin}, nil
 	}
 	if !validWorktree.MatchString(worktree) {
 		return location{}, errors.New("invalid worktree name")
@@ -77,5 +85,5 @@ func locate(s *store.Store, projectID, worktree string) (location, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return location{}, errors.New("worktree not found: " + worktree)
 	}
-	return location{Dir: dir, Env: env}, nil
+	return location{Dir: dir, Env: env, Admin: admin}, nil
 }

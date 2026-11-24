@@ -11,6 +11,9 @@ const (
 	EventChatCommands   = "chat:commands" // slash commands available
 	EventChatReload     = "chat:reload"   // a chat's messages changed wholesale (rewind)
 	EventSessionUpdated = "session:updated"
+	// Workspaces or chats were added, removed or renamed: every window reloads its list, so
+	// the main window and the quick chat stay in step.
+	EventTreeChanged = "tree:changed"
 	EventTermData       = "term:data"
 	EventTermExit       = "term:exit"
 	EventUsageUpdated   = "usage:updated"

@@ -62,6 +62,8 @@ type Settings struct {
 type OpenRequest struct {
 	Dir string
 	Env platform.Env
+	// Admin runs the agent as administrator (native Windows only), after a UAC prompt.
+	Admin bool
 	Settings
 	SessionID string // provider-side session id
 	Resume    bool   // true when SessionID already exists on the provider side

@@ -40,6 +40,7 @@ import {
   type LayoutNode,
   type SplitStrategy,
 } from "@/lib/layout-tree";
+import { Browser, HotkeyService, type HotkeyInfo } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
 import { FONT_META, UI_FONT_META, fontSize, useSettings, type SendMode } from "@/stores/settings-store";
@@ -408,6 +409,146 @@ function ServerInfo() {
   );
 }
 
+// ---- quick chat hotkey ----
+
+const MOD = isMac ? "⌘" : "Ctrl";
+/** The double taps offered, as hotkey specs (see internal/hotkey). */
+const DOUBLE_TAPS: { spec: string; label: string }[] = [
+  { spec: "mod mod", label: `Double-tap ${MOD}` },
+  { spec: "alt alt", label: `Double-tap ${isMac ? "⌥" : "Alt"}` },
+  { spec: "shift shift", label: `Double-tap ${isMac ? "⇧" : "Shift"}` },
+];
+
+/** Wails key names for KeyboardEvent codes that aren't a letter or digit. */
+const NAMED_KEYS: Record<string, string> = {
+  Space: "space",
+  Enter: "enter",
+  Tab: "tab",
+  Backspace: "backspace",
+  Delete: "delete",
+  Home: "home",
+  End: "end",
+  PageUp: "page up",
+  PageDown: "page down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/** A key press as a hotkey combination ("ctrl+shift+space"); null for a modifier alone or no modifier. */
+function hotkeyFromEvent(e: KeyboardEvent): string | null {
+  let key: string | undefined;
+  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
+  else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  else if (/^F\d{1,2}$/.test(e.code)) key = e.code.toLowerCase();
+  else if (NAMED_KEYS[e.code]) key = NAMED_KEYS[e.code];
+  else if (e.key.length === 1 && e.key !== "+") key = e.key.toLowerCase();
+  if (!key) return null;
+  const mods = [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && "shift", e.metaKey && (isMac ? "cmd" : "win")].filter(Boolean);
+  // Function keys may stand alone; anything else needs a modifier, or it would swallow typing.
+  if (mods.length === 0 && !/^f\d/.test(key)) return null;
+  return [...mods, key].join("+");
+}
+
+/** The system-wide shortcut that opens the quick chat (kept by the server). */
+function QuickChatShortcut() {
+  const [info, setInfo] = useState<HotkeyInfo | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const setGlobalRecording = useShortcuts((s) => s.setRecording);
+
+  useEffect(() => {
+    HotkeyService.Get()
+      .then(setInfo)
+      .catch((e) => setProblem(String(e)));
+  }, []);
+
+  const save = (spec: string) => {
+    setProblem(null);
+    HotkeyService.Set(spec)
+      .then(setInfo)
+      .catch((e) => setProblem(String(e)));
+  };
+
+  useEffect(() => {
+    if (!recording) return;
+    setGlobalRecording(true);
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return setRecording(false);
+      const spec = hotkeyFromEvent(e);
+      if (!spec) return; // modifiers alone: keep waiting
+      setRecording(false);
+      save(spec);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      setGlobalRecording(false);
+    };
+  }, [recording, setGlobalRecording]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spec = info?.spec ?? "";
+  const custom = !!info && spec !== "off" && !DOUBLE_TAPS.some((d) => d.spec === spec);
+  const choice = !info ? "" : spec === "off" ? "off" : custom ? "custom" : spec;
+
+  return (
+    <Section title="Quick chat">
+      <List>
+        <Row label="Open quick chat">
+          <div className="flex items-center gap-2">
+            <select
+              value={choice}
+              disabled={!info}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "custom") setRecording(true);
+                else save(v);
+              }}
+              className="h-7 rounded-md border bg-background/60 px-2 text-xs outline-none hover:border-ring focus:border-ring"
+            >
+              {DOUBLE_TAPS.map((d) => (
+                <option key={d.spec} value={d.spec}>
+                  {d.label}
+                </option>
+              ))}
+              <option value="custom">Custom shortcut…</option>
+              <option value="off">Off</option>
+            </select>
+            {(custom || recording) && (
+              <button
+                onClick={() => setRecording(!recording)}
+                title="Click to change"
+                className={cn(
+                  "inline-flex h-7 min-w-24 shrink-0 items-center justify-center rounded-md border bg-background/60 px-2 font-mono text-xs hover:border-ring",
+                  recording && "border-ring ring-2 ring-ring/30",
+                )}
+              >
+                {recording ? "Press keys…" : info?.label}
+              </button>
+            )}
+          </div>
+        </Row>
+      </List>
+      {(problem || info?.error) && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          {problem ?? info?.error}
+          {info?.settingsUrl && info.error && (
+            <>
+              {" "}
+              <button className="underline underline-offset-2" onClick={() => void Browser.OpenURL(info.settingsUrl)}>
+                Open System Settings
+              </button>
+            </>
+          )}
+        </p>
+      )}
+    </Section>
+  );
+}
+
 // ---- shortcuts ----
 
 function ShortcutsTable() {
@@ -419,6 +560,7 @@ function ShortcutsTable() {
 
   return (
     <>
+      <QuickChatShortcut />
       {sections.map((section, i) => (
         <Section
           key={section}

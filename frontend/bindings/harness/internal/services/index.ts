@@ -4,6 +4,7 @@
 import * as ChatService from "./chatservice.js";
 import * as FileService from "./fileservice.js";
 import * as GitService from "./gitservice.js";
+import * as HotkeyService from "./hotkeyservice.js";
 import * as ProjectService from "./projectservice.js";
 import * as SystemService from "./systemservice.js";
 import * as TerminalService from "./terminalservice.js";
@@ -12,6 +13,7 @@ export {
     ChatService,
     FileService,
     GitService,
+    HotkeyService,
     ProjectService,
     SystemService,
     TerminalService,
@@ -26,6 +28,7 @@ export type {
     ChatTasks,
     FileEntry,
     ForkResult,
+    HotkeyInfo,
     PendingRequest,
     PermissionAnswer,
     QueuedMessage,

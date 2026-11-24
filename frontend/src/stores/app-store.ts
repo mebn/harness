@@ -58,8 +58,8 @@ type AppState = {
   removeProject: (id: string) => Promise<void>;
   renameProject: (id: string, name: string) => Promise<void>;
   toggleProject: (id: string) => Promise<void>;
-  /** New terminals in the workspace run as administrator (Windows). */
-  setAdminTerminals: (id: string, admin: boolean) => Promise<void>;
+  /** The workspace's chats and new terminals run as administrator (Windows folders). */
+  setRunAsAdmin: (id: string, admin: boolean) => Promise<void>;
 
   newSession: (projectId: string, worktree?: string) => Promise<Session>;
   deleteSession: (id: string) => Promise<void>;
@@ -183,11 +183,11 @@ export const useApp = create<AppState>((set, get) => ({
     await ProjectService.SetExpanded(id, expanded);
   },
 
-  setAdminTerminals: async (id, admin) => {
+  setRunAsAdmin: async (id, admin) => {
     set({
-      tree: get().tree.map((n) => (n.project.id === id ? { ...n, project: { ...n.project, adminTerminals: admin } } : n)),
+      tree: get().tree.map((n) => (n.project.id === id ? { ...n, project: { ...n.project, runAsAdmin: admin } } : n)),
     });
-    await ProjectService.SetAdminTerminals(id, admin);
+    await ProjectService.SetRunAsAdmin(id, admin);
   },
 
 
