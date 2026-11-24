@@ -22,6 +22,33 @@ agent uses its own config (CLAUDE.md, settings, MCP servers, and so on).
 
 Requires `claude` and/or `copilot` on PATH. For WSL projects, they must be on PATH inside the distro.
 
+## Running
+
+Everything runs from `frontend/` (needs `wails3`, Go and Node):
+
+```sh
+cd frontend
+wails3 dev               # dev build, Vite hot reload; Go changes in server/ or frontend/ rebuild
+wails3 build             # frontend/bin/harness and frontend/bin/harness-server
+wails3 build DEV=true    # the same, unoptimised (what `wails3 dev` builds)
+```
+
+Both binaries must sit side by side: the window starts the server next to it
+(`HARNESS_SERVER_EXE` overrides that path, `HARNESS_DESKTOP_EXE` the server's path to the window).
+
+To test without touching the running Harness, build in a separate worktree and start the window
+with its own data directory; it starts its own server there:
+
+```sh
+HARNESS_DB=/tmp/harness-test/harness.db ./bin/harness
+```
+
+Stop that test server afterwards with its tray menu, or
+`curl -X POST -H "X-Harness-Token: <token>" http://127.0.0.1:<port>/api/shutdown` (values from
+`/tmp/harness-test/server.json`).
+
+Tests: `go test ./...` in `server/` and in `frontend/`; `npx tsc --noEmit` in `frontend/ui`.
+
 ## Architecture
 
 Harness is two processes, each its own Go module:
