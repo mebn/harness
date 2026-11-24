@@ -21,10 +21,12 @@ type TerminalService struct {
 
 	mu    sync.Mutex
 	terms map[string]pty.Pty
+	// The shell's process id, for shells whose commands can be seen (native, not as admin).
+	pids map[string]int
 }
 
 func NewTerminalService(s *store.Store, emit Emitter) *TerminalService {
-	return &TerminalService{store: s, emit: emit, terms: map[string]pty.Pty{}}
+	return &TerminalService{store: s, emit: emit, terms: map[string]pty.Pty{}, pids: map[string]int{}}
 }
 
 // Start opens a shell in the project's folder or its worktree (or home if projectID is empty).
@@ -72,6 +74,11 @@ func (t *TerminalService) Start(projectID, worktree string, admin bool, cols, ro
 	id := uuid.NewString()
 	t.mu.Lock()
 	t.terms[id] = p
+	// A WSL shell's commands run inside the distro, and an admin shell sits behind sudo: their
+	// processes can't be told apart from the shell's own here.
+	if env.Normalize() == platform.EnvNative && !admin && cmd.Process != nil {
+		t.pids[id] = cmd.Process.Pid
+	}
 	t.mu.Unlock()
 
 	go func() {
@@ -121,10 +128,31 @@ func (t *TerminalService) Resize(id string, cols, rows int) error {
 	return p.Resize(cols, rows)
 }
 
+// Busy returns the terminals among ids that are running a command (the shell has a child
+// process). Terminals where that can't be seen (WSL, administrator) are never busy.
+func (t *TerminalService) Busy(ids []string) []string {
+	t.mu.Lock()
+	pids := map[string]int{}
+	for _, id := range ids {
+		if pid, ok := t.pids[id]; ok {
+			pids[id] = pid
+		}
+	}
+	t.mu.Unlock()
+	busy := []string{}
+	for id, pid := range pids {
+		if platform.HasChildProcesses(pid) {
+			busy = append(busy, id)
+		}
+	}
+	return busy
+}
+
 func (t *TerminalService) Close(id string) {
 	t.mu.Lock()
 	p, ok := t.terms[id]
 	delete(t.terms, id)
+	delete(t.pids, id)
 	t.mu.Unlock()
 	if ok {
 		_ = p.Close()

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Events, TerminalService } from "@/lib/backend";
+import { trackTerminal } from "@/lib/close-guard";
 import { useTheme } from "@/stores/theme-store";
 
 // Transparent backgrounds let the window card show through.
@@ -32,12 +33,15 @@ function decode(b64: string): Uint8Array {
  * from where that folder lives. Starts on mount and lives until unmount.
  */
 export function TerminalView({
+  tabId,
   projectId,
   worktree = "",
   admin = false,
   active,
   fontSize = 13,
 }: {
+  /** The tab showing it: closing that tab checks the shell for a running command. */
+  tabId: string;
   projectId: string;
   /** Where the shell starts; a running shell stays put if its group moves to another worktree. */
   worktree?: string;
@@ -89,6 +93,7 @@ export function TerminalView({
         id = tid;
         early.filter((c) => c.id === id).forEach((c) => term.write(decode(c.data)));
         early.length = 0;
+        cleanups.push(trackTerminal(tabId, id));
         const input = term.onData((d) => void TerminalService.Write(id, d));
         const resize = term.onResize(({ cols, rows }) => void TerminalService.Resize(id, cols, rows));
         cleanups.push(() => input.dispose(), () => resize.dispose());
@@ -107,7 +112,7 @@ export function TerminalView({
       if (id) void TerminalService.Close(id);
       term.dispose();
     };
-    // projectId is fixed for this instance.
+    // projectId and the tab are fixed for this instance.
   }, [projectId]);
 
   useEffect(() => {

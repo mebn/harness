@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { StartupScreen, useStartup } from "@/components/layout/startup-screen";
 import { WindowControls } from "@/components/layout/window-controls";
 import { DragOverlay } from "@/components/workspace/drag-overlay";
@@ -42,6 +43,7 @@ export default function App() {
       <SearchDialog />
       <FileSearchDialog />
       <SettingsDialog open={settingsOpen} onOpenChange={(open) => setSettingsOpen(open)} initial={settingsCategory} />
+      <ConfirmDialog />
       <Notice />
       <DragOverlay />
     </TooltipProvider>

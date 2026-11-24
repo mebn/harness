@@ -50,6 +50,8 @@ export function SubTabBar({ tabs, active, onSelect, onClose, onAdd, addLabel = "
                   {t.closable && onClose && (
                     <button
                       aria-label={`Close ${t.label}`}
+                      // Focus stays where it was (the panel's own keys keep working).
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);

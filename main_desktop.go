@@ -82,7 +82,14 @@ func main() {
 		URL:              "/",
 	})
 
-	go bridge.RelayEvents(ctx, func(name string, data any) { app.Event.Emit(name, data) })
+	go bridge.RelayEvents(ctx, func(name string, data any) {
+		// The server was quit from its tray: the window goes too.
+		if name == server.EventQuit {
+			app.Quit()
+			return
+		}
+		app.Event.Emit(name, data)
+	})
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

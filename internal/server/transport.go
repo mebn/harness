@@ -17,6 +17,20 @@ import (
 // (it reconnects and reloads).
 const eventBuffer = 1024
 
+// EventQuit tells connected windows the server is quitting on purpose (from its tray menu), so
+// they quit too instead of starting it again. A restart into a new build doesn't send it.
+const EventQuit = "server:quit"
+
+// quitNotice is how long a quitting server waits for EventQuit to reach the windows.
+const quitNotice = 300 * time.Millisecond
+
+// QuitWithWindows tells the windows the server is going away, then quits.
+func (t *Transport) QuitWithWindows(quit func()) {
+	t.Emit(EventQuit, nil)
+	time.Sleep(quitNotice)
+	quit()
+}
+
 // Transport serves a normal (windowed-capable) Wails app over local HTTP, the way Wails'
 // server mode does, so the server can also own a tray icon:
 //

@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plus } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import { InlineEdit } from "@/components/common/inline-edit";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -7,6 +7,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ProjectTree } from "@/lib/backend";
@@ -16,55 +18,63 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { useDrag } from "@/stores/drag-store";
-import { canElevate, sidebarOrder, useGroups, type Group } from "@/stores/group-store";
-import { useSort } from "@/stores/sort-store";
+import { canElevate, moveGroupTo, useGroups, type Group } from "@/stores/group-store";
 import { ActivityIndicator, STATE_TEXT } from "./activity-indicator";
 import { HoverSwap } from "./hover-swap";
-import { ImportChatDialog } from "./import-chat-dialog";
 import { GroupItem } from "./group-item";
+import { useLiveReorder } from "./use-live-reorder";
+import { WorkspaceIcon } from "./workspace-icon";
+
+/** Marks the slot a dragged tab or window would become a new group in. */
+const PLACEHOLDER = "\u0000new-group";
 
 export function ProjectItem({
   node,
   groups,
   dragging,
-  dropEdge,
 }: {
   node: ProjectTree;
   groups: Group[];
   /** Being dragged to a new position. */
   dragging?: boolean;
-  /** A dragged workspace will land on this side of this one. */
-  dropEdge?: "before" | "after";
 }) {
   const { project } = node;
   const sessions = node.sessions ?? [];
   const [editing, setEditing] = useState(false);
   // The ⋯ menu; right-clicking the row opens it too.
   const [menuOpen, setMenuOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
   const toggle = useApp((s) => s.toggleProject);
   const newGroup = useGroups((s) => s.newGroup);
-  const reorder = useGroupReorder(project.id, groups);
-  // A tab or window from this workspace dragged over the sidebar lands here as a new group.
-  const dropHere = useDrag((s) => s.drag?.projectId === project.id && s.drag.target?.kind === "newGroup");
   const rename = useApp((s) => s.renameProject);
   const remove = useApp((s) => s.removeProject);
   const setAdminTerminals = useApp((s) => s.setAdminTerminals);
   const elevatable = useApp((s) => canElevate(project, s.system.os));
   const now = useNow();
-  // The folder shows the most urgent state among its sessions.
+  // Folded, the header shows the most urgent state among its sessions.
   const state = useApp((s) => strongest(sessions.map((x) => sessionState(x, !!s.running[x.id], s.seen[x.id]))));
 
+  // A tab or window from this workspace dragged over the sidebar becomes a new group here:
+  // at the hovered place among the groups, or (no place) at the end.
+  const dropAt = useDrag((s) => {
+    const t = s.drag?.projectId === project.id ? s.drag.target : null;
+    return t?.kind === "newGroup" ? (t.index ?? -1) : null;
+  });
+
+  const reorder = useLiveReorder({
+    ids: groups.map((g) => g.id),
+    pick: (target) =>
+      target.closest("button, input, [role=menu]") ? null : (target.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup ?? null),
+    onDrop: moveGroupTo,
+  });
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const rows = [...reorder.order];
+  if (dropAt !== null && project.expanded) rows.splice(dropAt < 0 ? rows.length : dropAt, 0, PLACEHOLDER);
+
   return (
-    <div data-drop-project={project.id} className={cn("relative", dragging && "opacity-40")}>
-      {dropEdge && (
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-ring",
-            dropEdge === "before" ? "-top-[5px]" : "-bottom-[5px]",
-          )}
-        />
-      )}
+    <div
+      data-flip-key={project.id}
+      className={cn("relative rounded-lg", dragging && "z-20 bg-(--backdrop) shadow-lg ring-1 ring-sidebar-border")}
+    >
       <Collapsible open={project.expanded}>
         <div
           role="button"
@@ -75,10 +85,15 @@ export function ProjectItem({
             setMenuOpen(true);
           }}
           title={project.path}
-          className="group flex h-7 cursor-default items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:text-sidebar-foreground"
+          className="group flex h-8 cursor-default items-center gap-1.5 rounded-lg px-2 text-sidebar-foreground/90 transition-colors hover:bg-sidebar-accent/60"
         >
-          {/* Expanded, each group shows its own activity; collapsed, the header carries it. */}
-          {!project.expanded && state !== "idle" && <ActivityIndicator state={state} />}
+          {/* The workspace's icon turns into the fold chevron on hover. */}
+          <span className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+            <WorkspaceIcon projectId={project.id} className="group-hover:invisible" />
+            <ChevronRight
+              className={cn("invisible absolute size-3.5 transition-transform group-hover:visible", project.expanded && "rotate-90")}
+            />
+          </span>
           {editing ? (
             <InlineEdit
               value={project.name}
@@ -89,25 +104,21 @@ export function ProjectItem({
               onCancel={() => setEditing(false)}
             />
           ) : (
-            <span className="flex min-w-0 flex-1 items-center gap-1">
-              <span className={cn("truncate text-xs font-semibold", !project.expanded && STATE_TEXT[state])}>{project.name}</span>
-              <ChevronDown
-                className={cn(
-                  "size-3 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100",
-                  !project.expanded && "-rotate-90 opacity-100",
-                )}
-              />
+            <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium", !project.expanded && STATE_TEXT[state])}>
+              {project.name}
             </span>
           )}
+          {/* Expanded, each group shows its own activity; folded, the header carries it. */}
+          {!project.expanded && state !== "idle" && <ActivityIndicator state={state} />}
           {project.env === "wsl" && (
-            <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">WSL</span>
+            <span className="rounded border border-sidebar-border px-1 text-[10px] leading-4 font-medium text-muted-foreground">WSL</span>
           )}
-  
+
           <HoverSwap idle={timeAgo(projectLastUsed(node), now)}>
             <button
               aria-label="New group"
               title={`New group (${shortcutLabel("newGroup")})`}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 void newGroup(project.id);
@@ -117,14 +128,19 @@ export function ProjectItem({
             </button>
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button aria-label="Project options" className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                <button
+                  aria-label="Workspace options"
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                >
                   <MoreHorizontal className="size-3.5" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem onSelect={() => setEditing(true)}>
-                  Rename
+              <DropdownMenuContent align="start" className="w-52" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onSelect={() => void newGroup(project.id)}>
+                  New group
+                  <DropdownMenuShortcut>{shortcutLabel("newGroup")}</DropdownMenuShortcut>
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setEditing(true)}>Rename</DropdownMenuItem>
                 {elevatable && (
                   <DropdownMenuCheckboxItem
                     checked={project.adminTerminals}
@@ -133,48 +149,43 @@ export function ProjectItem({
                     Terminals as admin
                   </DropdownMenuCheckboxItem>
                 )}
-                {project.env !== "wsl" && (
-                  <DropdownMenuItem onSelect={() => setImporting(true)}>Import Claude Code chat…</DropdownMenuItem>
-                )}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
-                  Remove
+                  Remove workspace
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </HoverSwap>
         </div>
-        {/* Outside the row, so clicks in the dialog don't toggle the folder. */}
-        <ImportChatDialog project={project} open={importing} onOpenChange={setImporting} />
-  
+
         <CollapsibleContent>
           <div
             ref={reorder.listRef}
             onPointerDown={reorder.onPointerDown}
-            className="flex flex-col gap-0.5 pb-1"
+            data-group-list={project.id}
+            className="relative flex flex-col gap-0.5 pt-0.5 pb-1 pl-[1.375rem]"
           >
-            {groups.map((g) => (
-              <GroupItem
-                key={g.id}
-                group={g}
-                dragging={reorder.dragId === g.id}
-                dropEdge={reorder.drop?.id === g.id ? reorder.drop.edge : undefined}
-              />
-            ))}
-            {groups.length === 0 && !dropHere && (
+            {rows.map((id) =>
+              id === PLACEHOLDER ? (
+                <NewGroupSlot key={id} />
+              ) : byId.has(id) ? (
+                <GroupItem key={id} group={byId.get(id)!} dragging={reorder.dragId === id} />
+              ) : null,
+            )}
+            {groups.length === 0 && dropAt === null && (
               <button
                 onClick={() => void newGroup(project.id)}
-                className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-sidebar-border px-2 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               >
-                New group
+                <Plus className="size-3.5" /> New group
               </button>
             )}
           </div>
         </CollapsibleContent>
-        {dropHere && (
-          <div className="pb-1">
-            <div className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
-              New group
-            </div>
+        {/* Folded: the new group shows under the header. */}
+        {dropAt !== null && !project.expanded && (
+          <div className="pt-0.5 pb-1 pl-[1.375rem]">
+            <NewGroupSlot />
           </div>
         )}
       </Collapsible>
@@ -182,79 +193,15 @@ export function ProjectItem({
   );
 }
 
-type DropSpot = { id: string; edge: "before" | "after" };
-
-/**
- * Drag a group row up or down within its workspace. Dropping saves the new order and
- * switches the sidebar to manual sorting. A press without movement stays a click.
- */
-function useGroupReorder(projectId: string, groups: Group[]) {
-  const listRef = useRef<HTMLDivElement>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [drop, setDrop] = useState<DropSpot | null>(null);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, [role=menu]")) return;
-    const row = target.closest<HTMLElement>("[data-drop-group]");
-    const id = row?.dataset.dropGroup;
-    if (!id || groups.length < 2) return;
-
-    const startY = e.clientY;
-    let active = false;
-    let spot: DropSpot | null = null;
-
-    const spotAt = (x: number, y: number): DropSpot | null => {
-      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-drop-group]");
-      if (!el || !listRef.current?.contains(el) || el.dataset.dropGroup === id) return null;
-      const r = el.getBoundingClientRect();
-      return { id: el.dataset.dropGroup!, edge: y < r.top + r.height / 2 ? "before" : "after" };
-    };
-    const onMove = (ev: PointerEvent) => {
-      if (!active) {
-        if (Math.abs(ev.clientY - startY) < 4) return;
-        active = true;
-        setDragId(id);
-        document.body.style.cursor = "grabbing";
-      }
-      // Keep the pointer's x inside the list so dragging off to the side still targets a row.
-      const rect = listRef.current!.getBoundingClientRect();
-      spot = spotAt(Math.min(Math.max(ev.clientX, rect.left + 4), rect.right - 4), ev.clientY);
-      setDrop(spot);
-    };
-    const finish = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", finish);
-      document.body.style.cursor = "";
-      setDragId(null);
-      setDrop(null);
-    };
-    const swallowClick = (ev: Event) => ev.stopPropagation();
-    const onUp = () => {
-      finish();
-      if (!active) return;
-      // The drag ends in a click on the row; it shouldn't open the group.
-      window.addEventListener("click", swallowClick, { capture: true, once: true });
-      setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0);
-      if (spot) save(id, spot);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", finish);
-  };
-
-  const save = (id: string, spot: DropSpot) => {
-    const ids = groups.map((g) => g.id).filter((x) => x !== id);
-    const at = ids.indexOf(spot.id) + (spot.edge === "after" ? 1 : 0);
-    ids.splice(at, 0, id);
-    // Freeze everything else where it is on screen now, then apply this workspace's new order.
-    const shown = sidebarOrder(useApp.getState().tree, useGroups.getState().groups);
-    const groupsOrder = Object.fromEntries(shown.map((x) => [x.node.project.id, x.groups.map((g) => g.id)]));
-    groupsOrder[projectId] = ids;
-    useSort.getState().setManual({ projects: shown.map((x) => x.node.project.id), groups: groupsOrder });
-  };
-
-  return { listRef, onPointerDown, dragId, drop };
+/** Where a tab or window being dragged in will become a new group. */
+function NewGroupSlot() {
+  return (
+    <div
+      data-flip-key={PLACEHOLDER}
+      data-group-placeholder
+      className="flex h-11 items-center rounded-lg border border-dashed border-ring/70 bg-ring/10 px-2 text-[13px] text-foreground animate-in fade-in-0 zoom-in-95 duration-150"
+    >
+      New group
+    </div>
+  );
 }

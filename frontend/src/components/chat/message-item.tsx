@@ -1,5 +1,6 @@
 import { memo } from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
+import { PreviewableImage } from "@/components/common/image-preview";
 import remarkGfm from "remark-gfm";
 import type { Message, Part } from "@/lib/backend";
 import { AttachmentView } from "./attachment-view";
@@ -7,15 +8,25 @@ import { AgentCall, isAgentPart } from "./agent-call";
 import { MessageActions } from "./message-actions";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCall } from "./tool-call";
+import { segment, ToolGroup } from "./tool-group";
 
 const remarkPlugins = [remarkGfm];
+/** Images in replies open in the app's preview rather than the system browser. */
+const markdownComponents: Components = {
+  img: ({ src, alt }) =>
+    typeof src === "string" ? (
+      <PreviewableImage src={src} alt={alt}>
+        <img src={src} alt={alt ?? ""} className="max-h-80 rounded-md border" />
+      </PreviewableImage>
+    ) : null,
+};
 
 function PartView({ part }: { part: Part }) {
   switch (part.type) {
     case "text":
       return (
         <div className="prose-chat">
-          <Markdown remarkPlugins={remarkPlugins}>{part.text ?? ""}</Markdown>
+          <Markdown remarkPlugins={remarkPlugins} components={markdownComponents}>{part.text ?? ""}</Markdown>
         </div>
       );
     case "thinking":
@@ -62,13 +73,22 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Mes
   for (const p of parts) {
     if (p.parentId) byParent.set(p.parentId, [...(byParent.get(p.parentId) ?? []), p]);
   }
+  const view = (p: Part, i: number) =>
+    isAgentPart(p) ? (
+      <AgentCall key={p.toolId || i} part={p} calls={byParent.get(p.toolId ?? "") ?? []} />
+    ) : (
+      <PartView key={p.toolId || i} part={p} />
+    );
+  // Consecutive tool calls collapse into one line.
   return (
     <div className="min-w-0">
-      {parts.map((p, i) =>
-        p.parentId ? null : isAgentPart(p) ? (
-          <AgentCall key={p.toolId || i} part={p} calls={byParent.get(p.toolId ?? "") ?? []} />
+      {segment(parts).map((s) =>
+        "id" in s ? (
+          <ToolGroup key={`group:${s.id}`} id={s.id} parts={s.parts.map((r) => r.part)}>
+            {s.parts.map((r) => view(r.part, r.index))}
+          </ToolGroup>
         ) : (
-          <PartView key={p.toolId || i} part={p} />
+          view(s.part, s.index)
         ),
       )}
     </div>

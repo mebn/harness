@@ -26,14 +26,6 @@ import * as store$0 from "../store/models.js";
 import * as $models from "./models.js";
 
 /**
- * ClaudeChats lists Claude Code conversations started in a workspace (or one of its
- * worktrees) that aren't in Harness yet, newest first.
- */
-export function ClaudeChats(projectID: string, worktree: string): $CancellablePromise<$models.ClaudeChat[] | null> {
-    return $Call.ByID(3513716654, projectID, worktree);
-}
-
-/**
  * Clear starts a fresh provider conversation in the chat (/clear). Earlier messages stay
  * visible above a divider but are no longer part of what the agent sees.
  */
@@ -55,14 +47,6 @@ export function Commands(sessionID: string): $CancellablePromise<provider$0.Comm
  */
 export function Fork(sessionID: string, messageID: string): $CancellablePromise<$models.ForkResult> {
     return $Call.ByID(2107615329, sessionID, messageID);
-}
-
-/**
- * ImportClaudeChat adds a Claude Code conversation to the workspace as a chat that
- * continues it.
- */
-export function ImportClaudeChat(projectID: string, worktree: string, id: string): $CancellablePromise<store$0.Session> {
-    return $Call.ByID(3247530640, projectID, worktree, id);
 }
 
 export function Messages(sessionID: string): $CancellablePromise<store$0.Message[] | null> {

@@ -5,13 +5,14 @@ import { ProjectSidebar } from "@/components/sidebar/project-sidebar";
 import { Button } from "@/components/ui/button";
 import { GroupView } from "@/components/workspace/group-view";
 import { TabLayer } from "@/components/workspace/tab-layer";
-import { useGroupTitle } from "@/components/workspace/tab-meta";
+import { Breadcrumb } from "./breadcrumb";
+import { useAddWorkspace } from "@/components/sidebar/project-sidebar";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
 import { useLayout } from "@/stores/layout-store";
 import { shortcutLabel } from "@/lib/shortcuts";
-import { useActiveGroup, useActiveProject, useGroups } from "@/stores/group-store";
+import { useGroups } from "@/stores/group-store";
 import {
   WINDOW_CONTROLS_WIDTH,
   dragStyle,
@@ -136,7 +137,7 @@ function GroupStack() {
         const group = groups.find((g) => g.id === id);
         if (!group) return null;
         return (
-          <div key={id} className={cn("absolute inset-0", id !== activeId && "pointer-events-none invisible")}>
+          <div key={id} className={cn("absolute inset-0", id !== activeId && "layer-hidden")}>
             <GroupView group={group} active={id === activeId} />
           </div>
         );
@@ -150,20 +151,14 @@ function GroupStack() {
 
 function EmptyState() {
   const tree = useApp((s) => s.tree);
-  const addProject = useApp((s) => s.addProject);
+  const addWorkspace = useAddWorkspace();
   const newGroup = useGroups((s) => s.newGroup);
   const latest = tree[tree.length - 1]?.project;
 
   return (
     <div className="pane-card flex h-full items-center justify-center gap-2">
-      <Button
-        variant="outline"
-        onClick={async () => {
-          const id = await addProject();
-          if (id) await newGroup(id);
-        }}
-      >
-        <FolderPlus /> Open folder
+      <Button variant="outline" onClick={() => void addWorkspace()}>
+        <FolderPlus /> Add workspace
       </Button>
       {latest && (
         <Button variant="ghost" onClick={() => void newGroup(latest.id)}>
@@ -175,9 +170,6 @@ function EmptyState() {
 }
 
 function TopBar() {
-  const group = useActiveGroup();
-  const title = useGroupTitle(group);
-  const project = useActiveProject();
   const toggleSidebar = useLayout((s) => s.toggleSidebar);
   const sidebarOpen = useLayout((s) => s.sidebarOpen);
   const isMac = useMacTitleBar();
@@ -186,7 +178,7 @@ function TopBar() {
     // Part of the window's title bar: draggable, and padded around OS/window controls.
     <header
       onDoubleClick={onTitleBarDoubleClick}
-      className="flex h-11 shrink-0 items-center gap-2 px-1"
+      className="flex h-11 shrink-0 items-center gap-1 px-1"
       style={{
         ...dragStyle,
         paddingLeft: isMac && !sidebarOpen ? 80 : undefined,
@@ -196,10 +188,7 @@ function TopBar() {
       <IconButton label={`Toggle sidebar (${shortcutLabel("toggleSidebar")})`} onClick={toggleSidebar} style={noDragStyle}>
         <PanelLeft />
       </IconButton>
-      <span className="min-w-0 truncate text-[13px]">
-        {project && <span className="text-muted-foreground">{project.name} / </span>}
-        <span className="font-medium">{title}</span>
-      </span>
+      <Breadcrumb />
     </header>
   );
 }

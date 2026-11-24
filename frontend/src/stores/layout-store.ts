@@ -5,7 +5,22 @@ const SIDEBAR_KEY = "harness.sidebarOpen";
 const NOTICE_MS = 1800;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** A question shown in a dialog, answered yes (true) or no. */
+export type Confirm = {
+  title: string;
+  message: string[];
+  /** The confirm button's label. */
+  action: string;
+  resolve: (yes: boolean) => void;
+};
+
 type LayoutState = {
+  /** The confirmation dialog on screen, if any. */
+  confirm: Confirm | null;
+  /** Asks a question in a dialog; resolves with the answer. */
+  ask: (q: Omit<Confirm, "resolve">) => Promise<boolean>;
+  /** Answers the open question. */
+  answer: (yes: boolean) => void;
   sidebarOpen: boolean;
   searchOpen: boolean;
   /** The file finder ("files") or text search ("text"), or null when closed. */
@@ -30,6 +45,18 @@ type LayoutState = {
 };
 
 export const useLayout = create<LayoutState>((set, get) => ({
+  confirm: null,
+  ask: (q) =>
+    new Promise((resolve) => {
+      // Only one question at a time: one already open is answered no.
+      get().confirm?.resolve(false);
+      set({ confirm: { ...q, resolve } });
+    }),
+  answer: (yes) => {
+    const q = get().confirm;
+    set({ confirm: null });
+    q?.resolve(yes);
+  },
   sidebarOpen: storage.get(SIDEBAR_KEY) !== "false",
   searchOpen: false,
   fileSearch: null,

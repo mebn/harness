@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bot, Check, ChevronDown, FilePen, ListTodo, Search, ShieldOff, ShieldQuestion, Sparkle, Star, Zap } from "lucide-react";
+import { Check, ChevronDown, FilePen, ListTodo, Search, ShieldOff, ShieldQuestion, Sparkle, Star, Zap } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
+import { ClaudeLogo, ProviderLogo } from "@/components/common/provider-logo";
 import type { Option, ProviderInfo, Session } from "@/lib/backend";
 import { isMac } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -42,36 +43,13 @@ function saveFavorites(list: string[]) {
   }
 }
 
-/** A radial spark used for Claude models. */
-function SparkIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
-      {Array.from({ length: 12 }, (_, i) => {
-        const a = (i * Math.PI) / 6;
-        const r1 = 2.5;
-        const r2 = i % 2 ? 8.5 : 10.5;
-        return (
-          <line
-            key={i}
-            x1={12 + r1 * Math.cos(a)}
-            y1={12 + r1 * Math.sin(a)}
-            x2={12 + r2 * Math.cos(a)}
-            y2={12 + r2 * Math.sin(a)}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
 function ProviderIcon({ id, className }: { id: string; className?: string }) {
-  if (id === "claude") return <SparkIcon className={cn("text-[#d97757]", className)} />;
-  return <Bot className={className} />;
+  return <ProviderLogo id={id} className={className} />;
 }
 
 /** Icon for a model: its family when the id tells, otherwise the provider's. */
 function ModelIcon({ providerId, modelId, className }: { providerId: string; modelId: string; className?: string }) {
-  if (modelId.startsWith("claude")) return <SparkIcon className={cn("text-[#d97757]", className)} />;
+  if (modelId.startsWith("claude")) return <ClaudeLogo className={className} />;
   if (modelId.startsWith("gpt")) return <Sparkle className={className} />;
   return <ProviderIcon id={providerId} className={className} />;
 }

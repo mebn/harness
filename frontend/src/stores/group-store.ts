@@ -240,6 +240,44 @@ export function sidebarOrder(tree: ProjectTree[], groups: Group[], view: SortVie
   }));
 }
 
+/** The sidebar's current order as ids: workspaces, and each one's groups. */
+function shownOrder() {
+  const shown = sidebarOrder(useApp.getState().tree, useGroups.getState().groups);
+  return {
+    projects: shown.map((x) => x.node.project.id),
+    groups: Object.fromEntries(shown.map((x) => [x.node.project.id, x.groups.map((g) => g.id)])),
+  };
+}
+
+/** `ids` with `id` placed at `index` among the others. */
+function placed(ids: string[], id: string, index: number): string[] {
+  const rest = ids.filter((x) => x !== id);
+  rest.splice(Math.max(0, Math.min(index, rest.length)), 0, id);
+  return rest;
+}
+
+/**
+ * Puts a group at `index` among its workspace's other groups. Everything else stays where it
+ * is on screen; the sidebar switches to manual order unless the sort already puts it there.
+ */
+export function moveGroupTo(groupId: string, index: number) {
+  const g = useGroups.getState().groups.find((x) => x.id === groupId);
+  if (!g) return;
+  const order = shownOrder();
+  const ids = order.groups[g.projectId] ?? [];
+  const next = placed(ids, groupId, index);
+  if (next.every((id, i) => id === ids[i])) return;
+  useSort.getState().setManual({ projects: order.projects, groups: { ...order.groups, [g.projectId]: next } });
+}
+
+/** Puts a workspace at `index` among the others, switching the sidebar to manual order. */
+export function moveProjectTo(projectId: string, index: number) {
+  const order = shownOrder();
+  const next = placed(order.projects, projectId, index);
+  if (next.every((id, i) => id === order.projects[i])) return;
+  useSort.getState().setManual({ projects: next, groups: order.groups });
+}
+
 /** Sidebar order as it is now (reactive): what the sidebar renders and ⌘1–9 counts. */
 export function useSidebarOrder() {
   const tree = useApp((s) => s.tree);
@@ -313,8 +351,8 @@ type GroupState = {
   drop: (groupId: string, payload: Payload, target: DropTarget, newPaneId: string) => void;
   /** Moves a tab or window into another group of the same workspace (placed by best fit). */
   moveToGroup: (fromId: string, payload: Payload, toId: string) => void;
-  /** Moves a tab or window out into a new group. */
-  moveToNewGroup: (fromId: string, payload: Payload) => void;
+  /** Moves a tab or window out into a new group, at `index` among the workspace's groups if given. */
+  moveToNewGroup: (fromId: string, payload: Payload, index?: number) => void;
 };
 
 export const useGroups = create<GroupState>((set, get) => {
@@ -722,18 +760,24 @@ export const useGroups = create<GroupState>((set, get) => {
       bumpFocus();
     },
 
-    moveToNewGroup: (fromId, payload) => {
+    moveToNewGroup: (fromId, payload, index) => {
       const from = get().groups.find((g) => g.id === fromId);
       if (!from) return;
       const { root, tabs } = extractPayload(from.root, payload);
       if (tabs.length === 0) return;
-      // Moving out a group's only content just turns it into a new group.
-      if (isEmpty(root)) return;
+      // Moving out a group's only content just moves the group. `index` counted it among the rows.
+      if (isEmpty(root)) {
+        if (index === undefined) return;
+        const ids = shownOrder().groups[from.projectId] ?? [];
+        moveGroupTo(fromId, index - (ids.indexOf(fromId) < index ? 1 : 0));
+        return;
+      }
       const group = makeGroup(from.projectId, tabs, Date.now(), from.worktree);
       set({
         groups: [...get().groups.map((g) => (g.id === fromId ? fixFocus({ ...g, root, maximized: null }) : g)), group],
         activeId: group.id,
       });
+      if (index !== undefined) moveGroupTo(group.id, index);
       bumpFocus();
     },
   };

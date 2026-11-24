@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, ChevronRight, Circle, CircleDot } from "lucide-react";
+import { PreviewableImage } from "@/components/common/image-preview";
 import type { Part } from "@/lib/backend";
 import { lineDiff, withContext } from "@/lib/line-diff";
 import { cn } from "@/lib/utils";
@@ -58,9 +59,9 @@ export function ToolCall({ part }: { part: Part }) {
       {images.length > 0 && (
         <div className="mt-1 ml-2 flex flex-wrap gap-2">
           {images.map((url) => (
-            <a key={url} href={url} target="_blank" rel="noreferrer">
+            <PreviewableImage key={url} src={url}>
               <img src={url} alt="" className="max-h-48 max-w-xs rounded-md border object-contain" />
-            </a>
+            </PreviewableImage>
           ))}
         </div>
       )}
@@ -69,7 +70,7 @@ export function ToolCall({ part }: { part: Part }) {
   );
 }
 
-function displayName(name: string): string {
+export function displayName(name: string): string {
   // mcp__server__tool → server · tool
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   return m ? `${m[1].replace(/^claude_ai_/, "")} · ${m[2]}` : name;

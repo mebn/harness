@@ -65,7 +65,7 @@ internal/
     projects.go             sidebar tree CRUD, session settings
     chat.go, transcript.go  live conversations: turns, queue, steering; streams `chat:message`
     permissions.go          permission prompts, questions, plan approval; slash commands
-    rewind.go, import.go    /clear, rewind, fork; importing Claude Code conversations
+    rewind.go               /clear, rewind, fork
     files.go                file explorer (sandboxed to project root)
     terminal.go             PTY shells (ConPTY on Windows) via go-pty
     system.go               OS info, folder picker
@@ -109,8 +109,15 @@ frontend/src/
 - Permission modes: Ask permissions, Accept edits, Plan, Full access.
 - `/clear` is handled by Harness (a fresh conversation in the same chat); other slash commands
   go to Claude Code.
-- Workspace menu → "Import Claude Code chat…" adds a conversation started with the CLI in that
-  folder (read from `~/.claude/projects`; native folders only).
+- Closing a tab, window or group that has a chat still working or a terminal running a command
+  asks first (`lib/close-guard.ts`; pressing the close shortcut again confirms). Terminals check
+  for child processes of the shell (`TerminalService.Busy`), which can't be seen for WSL or
+  administrator shells, so those never ask.
+- Workspaces show an icon found in their folder (`ProjectService.Icon`: app icons, favicons,
+  logos; see `iconCandidates` in `project_icon.go`), else a folder.
+- Sidebar lists reorder live while dragging (`sidebar/use-live-reorder.ts`, with `hooks/use-flip.ts`
+  sliding items to their new place). Dropping somewhere the sort wouldn't put it switches the
+  sidebar to manual order.
 - `HARNESS_E2E=1 go test ./internal/services -run ClaudeEndToEnd` checks the Claude
   integration against the real CLI (uses Haiku); `HARNESS_E2E=1 go test ./internal/provider
   -run CopilotEndToEnd` does the same for Copilot.

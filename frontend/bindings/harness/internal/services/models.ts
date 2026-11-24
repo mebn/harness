@@ -54,16 +54,6 @@ export interface ChatTasks {
 }
 
 /**
- * ClaudeChat is a Claude Code conversation saved on disk for a folder.
- */
-export interface ClaudeChat {
-    "id": string;
-    "title": string;
-    "updatedAt": number;
-    "size": number;
-}
-
-/**
  * FileEntry is one item in the file explorer.
  */
 export interface FileEntry {

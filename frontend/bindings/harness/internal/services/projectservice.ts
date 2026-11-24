@@ -31,6 +31,14 @@ export function DeleteSession(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * Icon returns a picture for a workspace, found in its folder (an app icon, favicon or logo),
+ * as a data URL; "" when it has none.
+ */
+export function Icon(projectID: string): $CancellablePromise<string> {
+    return $Call.ByID(2445303279, projectID);
+}
+
+/**
  * RemoveProject forgets a workspace (its folder on disk is untouched) and its sessions.
  */
 export function RemoveProject(id: string): $CancellablePromise<void> {

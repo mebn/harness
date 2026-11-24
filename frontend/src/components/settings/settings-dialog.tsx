@@ -1,8 +1,24 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { Keyboard, LayoutGrid, Minus, Monitor, Moon, Palette, Plus, RotateCcw, Server, Sun, Type, type LucideIcon } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  CornerDownRight,
+  Keyboard,
+  LayoutGrid,
+  ListPlus,
+  MessageSquare,
+  Minus,
+  Monitor,
+  Moon,
+  Palette,
+  Plus,
+  RotateCcw,
+  Server,
+  Sun,
+  Type,
+  type LucideIcon,
+} from "lucide-react";
 import { KIND_META, TabIcon } from "@/components/workspace/tab-meta";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   SHORTCUTS,
   combosFor,
@@ -26,42 +42,17 @@ import {
 } from "@/lib/layout-tree";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
-import { FONT_META, UI_FONT_META, fontSize, useSettings } from "@/stores/settings-store";
+import { FONT_META, UI_FONT_META, fontSize, useSettings, type SendMode } from "@/stores/settings-store";
 import { useTheme, type ThemePref } from "@/stores/theme-store";
 
-type Category = { id: string; label: string; icon: LucideIcon; description: string; render: () => ReactNode };
+type Category = { id: string; label: string; icon: LucideIcon; render: () => ReactNode };
 
 const CATEGORIES: Category[] = [
-  {
-    id: "appearance",
-    label: "Appearance",
-    icon: Palette,
-    description: "Theme and text size.",
-    render: () => <Appearance />,
-  },
-  {
-    id: "windows",
-    label: "Windows",
-    icon: LayoutGrid,
-    description:
-      "Where a new window goes when you open one (Ctrl/⌘+Enter) or move a tab into another group. Splitting by hand always splits the window you choose.",
-    render: () => <SplitStrategyPicker />,
-  },
-  {
-    id: "shortcuts",
-    label: "Keyboard shortcuts",
-    icon: Keyboard,
-    description:
-      "Click a shortcut to record a new one. Esc cancels, Backspace removes it. Changes apply immediately and are saved on this device.",
-    render: () => <ShortcutsTable />,
-  },
-  {
-    id: "server",
-    label: "Server",
-    icon: Server,
-    description: "The background server owns your workspaces, chats and terminals, and keeps them running when the window is closed.",
-    render: () => <ServerInfo />,
-  },
+  { id: "appearance", label: "Appearance", icon: Palette, render: () => <Appearance /> },
+  { id: "chat", label: "Chat", icon: MessageSquare, render: () => <ChatSettings /> },
+  { id: "windows", label: "Windows", icon: LayoutGrid, render: () => <SplitStrategyPicker /> },
+  { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard, render: () => <ShortcutsTable /> },
+  { id: "server", label: "Server", icon: Server, render: () => <ServerInfo /> },
 ];
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void; initial?: string };
@@ -78,6 +69,7 @@ export function SettingsDialog({ open, onOpenChange, initial }: Props) {
       <DialogContent
         className="flex h-[min(640px,85vh)] gap-0 overflow-hidden p-0 sm:max-w-3xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
+        aria-describedby={undefined}
       >
         <nav className="flex w-52 shrink-0 flex-col gap-0.5 border-r bg-muted/40 p-2">
           <DialogTitle className="px-2 pt-2 pb-3 text-sm font-semibold">Settings</DialogTitle>
@@ -95,13 +87,9 @@ export function SettingsDialog({ open, onOpenChange, initial }: Props) {
             </button>
           ))}
         </nav>
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="shrink-0 border-b px-6 pt-5 pb-4">
-            <h2 className="text-base font-semibold">{category.label}</h2>
-            <DialogDescription className="mt-1 text-xs">{category.description}</DialogDescription>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">{category.render()}</div>
-        </section>
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-7 py-6">
+          <div className="flex flex-col gap-8">{category.render()}</div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -117,41 +105,63 @@ const THEMES: { id: ThemePref; label: string; icon: LucideIcon }[] = [
 
 function Appearance() {
   return (
-    <div className="flex flex-col gap-6">
-      <Row label="Theme" hint="System follows your OS setting.">
+    <>
+      <Section title="Theme">
         <ThemeToggle />
-      </Row>
+      </Section>
       <TextSizes />
-    </div>
+    </>
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** A titled part of a settings page. */
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div>
-        <div className="text-sm">{label}</div>
-        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+    <section className="flex flex-col gap-3">
+      <div className="flex min-h-7 items-center justify-between gap-4">
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+        {action}
       </div>
+      {children}
+    </section>
+  );
+}
+
+/** Rows in a rounded box, divided by lines. */
+function List({ children }: { children: ReactNode }) {
+  return <div className="divide-y overflow-hidden rounded-lg border">{children}</div>;
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-4 px-3 py-2">
+      <div className="text-sm">{label}</div>
       {children}
     </div>
   );
 }
 
-function ThemeToggle() {
-  const pref = useTheme((s) => s.pref);
-  const setPref = useTheme((s) => s.setPref);
+/** Two or three options side by side, one chosen. */
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { id: T; label: string; icon: LucideIcon }[];
+  onChange: (v: T) => void;
+}) {
   return (
-    <div role="radiogroup" className="flex rounded-lg bg-muted p-0.5">
-      {THEMES.map(({ id, label, icon: Icon }) => (
+    <div role="radiogroup" className="flex w-fit rounded-lg bg-muted p-0.5">
+      {options.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           role="radio"
-          aria-checked={pref === id}
-          onClick={() => setPref(id)}
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
           className={cn(
             "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground",
-            pref === id && "bg-background text-foreground shadow-sm",
+            value === id && "bg-background text-foreground shadow-sm",
           )}
         >
           <Icon className="size-3.5" />
@@ -159,6 +169,35 @@ function ThemeToggle() {
         </button>
       ))}
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const pref = useTheme((s) => s.pref);
+  const setPref = useTheme((s) => s.setPref);
+  return <Segmented value={pref} options={THEMES} onChange={setPref} />;
+}
+
+// ---- chat ----
+
+const SEND_MODES: { id: SendMode; label: string; icon: LucideIcon }[] = [
+  { id: "steer", label: "Steer", icon: CornerDownRight },
+  { id: "queue", label: "Queue", icon: ListPlus },
+];
+
+function ChatSettings() {
+  const mode = useSettings((s) => s.sendWhileRunning);
+  const setMode = useSettings((s) => s.setSendWhileRunning);
+  const alt = isMac ? "⌥" : "Alt+";
+  return (
+    <Section title="Sending while the agent works">
+      <Segmented value={mode} options={SEND_MODES} onChange={setMode} />
+      <p className="text-xs text-muted-foreground">
+        {mode === "steer"
+          ? `Enter sends into the running turn right away; ${alt}Enter queues it for after.`
+          : `Enter queues the message for after the turn; ${alt}Enter steers it in right away.`}
+      </p>
+    </Section>
   );
 }
 
@@ -173,17 +212,12 @@ function TextSizes() {
   const anyChanged = Object.keys(sizes).length > 0 || uiSize !== UI_FONT_META.def;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="text-sm">Text size</div>
-          <div className="text-xs text-muted-foreground">
-            {isMac ? "⌘" : "Ctrl"} + / − / 0 changes it for the tab you are in.
-          </div>
-        </div>
+    <Section
+      title="Text size"
+      action={
         <Button
-          variant="outline"
-          size="sm"
+          variant="ghost"
+          size="xs"
           disabled={!anyChanged}
           onClick={() => {
             reset();
@@ -192,12 +226,12 @@ function TextSizes() {
         >
           <RotateCcw /> Reset all
         </Button>
-      </div>
-      <div className="overflow-hidden rounded-lg border">
+      }
+    >
+      <List>
         <SizeRow
           icon={<Type className="size-4 text-muted-foreground" />}
           label="App interface"
-          hint="Sidebar, tab bars, menus and dialogs"
           meta={UI_FONT_META}
           value={uiSize}
           changed={uiSize !== UI_FONT_META.def}
@@ -209,10 +243,8 @@ function TextSizes() {
           return (
             <SizeRow
               key={kind}
-              striped={i % 2 === 0}
               icon={<TabIcon kind={kind} className="size-4 text-muted-foreground" />}
-              label={KIND_META[kind].label}
-              hint={kind === "browser" ? "Page zoom" : "Font size"}
+              label={kind === "browser" ? "Browser zoom" : KIND_META[kind].label}
               meta={meta}
               value={fontSize(kind, sizes)}
               changed={sizes[kind] !== undefined}
@@ -221,42 +253,32 @@ function TextSizes() {
             />
           );
         })}
-      </div>
-    </div>
+      </List>
+    </Section>
   );
 }
 
 function SizeRow({
   icon,
   label,
-  hint,
   meta,
   value,
   changed,
-  striped,
   onChange,
   onReset,
 }: {
   icon: ReactNode;
   label: string;
-  hint: string;
   meta: { def: number; min: number; max: number; step: number; unit: string };
   value: number;
   changed: boolean;
-  striped?: boolean;
   onChange: (value: number) => void;
   onReset: () => void;
 }) {
   return (
-    <div className={cn("flex items-center gap-3 border-t px-3 py-2 first:border-t-0", striped && "bg-muted/70 dark:bg-muted/50")}>
+    <div className="flex min-h-11 items-center gap-3 px-3 py-1.5">
       {icon}
-      <div className="flex-1">
-        <div className="text-sm">{label}</div>
-        <div className="text-xs text-muted-foreground">
-          {hint} · default {meta.def}
-          {meta.unit}
-        </div>
-      </div>
+      <div className="flex-1 text-sm">{label}</div>
       <div className="flex items-center rounded-md border bg-background/60">
         <button
           aria-label={`Smaller ${label} text`}
@@ -281,7 +303,7 @@ function SizeRow({
       </div>
       <button
         aria-label={`Reset ${label} text size`}
-        title="Reset to default"
+        title={`Reset to ${meta.def}${meta.unit}`}
         onClick={onReset}
         className={cn("rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground", !changed && "invisible")}
       >
@@ -317,6 +339,7 @@ function SplitStrategyPicker() {
   const current = useSettings((s) => s.splitStrategy);
   const setStrategy = useSettings((s) => s.setSplitStrategy);
   return (
+    <Section title="Where new windows open">
     <div role="radiogroup" className="grid gap-2">
       {SPLIT_STRATEGIES.map((s) => {
         const rects = previewLayout(s.id);
@@ -357,6 +380,7 @@ function SplitStrategyPicker() {
         );
       })}
     </div>
+    </Section>
   );
 }
 
@@ -365,20 +389,22 @@ function SplitStrategyPicker() {
 function ServerInfo() {
   const system = useApp((s) => s.system);
   return (
-    <>
-      <Row label="Connected to" hint="Servers on other machines are not supported yet.">
-        <span className="text-sm text-muted-foreground">{system.os === "darwin" ? "This Mac" : "This PC"}</span>
-      </Row>
-      <Row label="Machine">
-        <span className="font-mono text-xs text-muted-foreground">{system.hostname || "—"}</span>
-      </Row>
-      <Row label="Platform">
-        <span className="text-sm text-muted-foreground">
-          {system.os}
-          {system.hasWsl && " · WSL available"}
-        </span>
-      </Row>
-    </>
+    <Section title="Connection">
+      <List>
+        <Row label="Connected to">
+          <span className="text-sm text-muted-foreground">{system.os === "darwin" ? "This Mac" : "This PC"}</span>
+        </Row>
+        <Row label="Machine">
+          <span className="font-mono text-xs text-muted-foreground">{system.hostname || "—"}</span>
+        </Row>
+        <Row label="Platform">
+          <span className="text-sm text-muted-foreground">
+            {system.os}
+            {system.hasWsl && " · WSL available"}
+          </span>
+        </Row>
+      </List>
+    </Section>
   );
 }
 
@@ -392,54 +418,41 @@ function ShortcutsTable() {
   const anyCustom = Object.keys(overrides).length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" disabled={!anyCustom} onClick={() => reset()}>
-          <RotateCcw /> Reset all to defaults
-        </Button>
-      </div>
-      <table className="w-full overflow-hidden rounded-lg border text-sm">
-        <thead className="bg-muted/60 text-left text-xs text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Action</th>
-            <th className="px-3 py-2 font-medium">Shortcut</th>
-            <th className="w-10" />
-          </tr>
-        </thead>
-        <tbody>
-          {sections.map((section) => (
-            <Fragment key={section}>
-              <tr className="border-t">
-                <td colSpan={3} className="bg-muted/30 px-3 pt-3 pb-1.5 text-xs font-semibold text-muted-foreground">
-                  {section}
-                </td>
-              </tr>
-              {SHORTCUTS.filter((s) => s.section === section).map((s, i) => (
-                <ShortcutRow
-                  key={s.id}
-                  shortcut={s}
-                  striped={i % 2 === 1}
-                  recording={recording === s.id}
-                  onRecord={(on) => setRecording(on ? s.id : null)}
-                />
-              ))}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {sections.map((section, i) => (
+        <Section
+          key={section}
+          title={section}
+          action={
+            i === 0 && (
+              <Button variant="ghost" size="xs" disabled={!anyCustom} onClick={() => reset()}>
+                <RotateCcw /> Reset all
+              </Button>
+            )
+          }
+        >
+          <List>
+            {SHORTCUTS.filter((s) => s.section === section).map((s) => (
+              <ShortcutRow
+                key={s.id}
+                shortcut={s}
+                recording={recording === s.id}
+                onRecord={(on) => setRecording(on ? s.id : null)}
+              />
+            ))}
+          </List>
+        </Section>
+      ))}
+    </>
   );
 }
 
 function ShortcutRow({
   shortcut,
-  striped,
   recording,
   onRecord,
 }: {
   shortcut: Shortcut;
-  /** Alternate rows are tinted, restarting in each section. */
-  striped: boolean;
   recording: boolean;
   onRecord: (on: boolean) => void;
 }) {
@@ -481,19 +494,18 @@ function ShortcutRow({
     shortcut.numbered && combos.length > 0 ? `${mods}${isMac || !mods ? "" : "+"}1…9` : shortcutLabel(shortcut.id, overrides);
 
   return (
-    <tr className={cn("border-t", striped && "bg-muted/70 dark:bg-muted/50")}>
-      <td className="px-3 py-1.5">
+    <div className="flex min-h-11 items-center gap-3 px-3 py-1.5 text-sm">
+      <div className="min-w-0 flex-1">
         <div>{shortcut.label}</div>
         {conflicts.length > 0 && (
           <div className="text-xs text-amber-600 dark:text-amber-400">Also used by {conflicts.map((c) => c.label).join(", ")}</div>
         )}
-      </td>
-      <td className="px-3 py-1.5">
-        <button
+      </div>
+      <button
           onClick={() => onRecord(!recording)}
           title="Click to change"
           className={cn(
-            "inline-flex h-7 min-w-24 items-center rounded-md border bg-background/60 px-2 font-mono text-xs hover:border-ring",
+            "inline-flex h-7 min-w-24 shrink-0 items-center justify-center rounded-md border bg-background/60 px-2 font-mono text-xs hover:border-ring",
             recording && "border-ring ring-2 ring-ring/30",
             !shown && !recording && "text-muted-foreground",
             custom && !recording && "font-semibold",
@@ -501,8 +513,7 @@ function ShortcutRow({
         >
           {recording ? (shortcut.numbered ? "Press modifiers + a digit…" : "Press keys…") : shown || "Not set"}
         </button>
-      </td>
-      <td className="px-2 py-1.5 text-right">
+      <span className="flex size-6 shrink-0 items-center justify-center">
         {custom && (
           <button
             aria-label={`Reset ${shortcut.label}`}
@@ -513,7 +524,7 @@ function ShortcutRow({
             <RotateCcw className="size-3.5" />
           </button>
         )}
-      </td>
-    </tr>
+      </span>
+    </div>
   );
 }

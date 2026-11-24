@@ -15,7 +15,6 @@ export type {
   FileEntry,
   PendingRequest,
   PermissionAnswer,
-  ClaudeChat,
   RewindResult,
 } from "@bindings/harness/internal/services/models";
 export type { Command as SlashCommand, Task as BackgroundTask, Elicitation } from "@bindings/harness/internal/provider/models";

@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, File, Folder, FolderTree } from "lucide-react";
 import { pressIntoGroup } from "@/components/workspace/group-view";
 import { FileService, type FileEntry, type GitStatus } from "@/lib/backend";
 import { uid } from "@/lib/layout-tree";
+import { onCloseInTab } from "@/lib/tab-close";
 import { cn } from "@/lib/utils";
 import { useGitStatus } from "@/stores/git-store";
 import { CodeView } from "./code-view";
@@ -19,22 +20,6 @@ const DECORATIONS: Record<string, Decoration> = {
   R: { letter: "R", className: "text-sky-600 dark:text-sky-400" },
   D: { letter: "D", className: "text-red-600 dark:text-red-400" },
 };
-
-type TreeContext = {
-  /** The group this explorer sits in; files dragged out become tabs there. */
-  groupId: string;
-  projectId: string;
-  worktree: string;
-  /** Increments on every poll so open folders re-list themselves. */
-  tick: number;
-  files: Map<string, Decoration>;
-  /** Folders that contain changes get the color of their "strongest" change. */
-  dirs: Map<string, Decoration>;
-  onOpen: (path: string) => void;
-};
-
-const Ctx = createContext<TreeContext | null>(null);
-const useTree = () => useContext(Ctx)!;
 
 function buildDecorations(status: GitStatus | undefined) {
   const files = new Map<string, Decoration>();
@@ -57,6 +42,13 @@ const TREE = "tree";
 
 type OpenTabs = { files: string[]; active: string };
 
+const closeFile = (cur: OpenTabs, path: string): OpenTabs => {
+  const next = closeTab(cur.files.map((p) => ({ id: p })), path, cur.active);
+  return { files: next.tabs.map((t) => t.id), active: next.active || TREE };
+};
+
+const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
+
 /**
  * Starts dragging a file out of the explorer; dropped in the group's layout it becomes a tab
  * of its own. A press that doesn't move stays a click.
@@ -67,11 +59,14 @@ function dragFileOut(groupId: string, path: string, e: React.PointerEvent, onDro
 
 /** Live file tree for a project (or worktree) plus open files as tabs (like editor tabs). */
 export function FileExplorer({
+  tabId,
   groupId,
   projectId,
   worktree = "",
   active,
 }: {
+  /** The window tab this explorer fills; Ctrl/⌘+W closes an open file in it first. */
+  tabId: string;
   groupId: string;
   projectId: string;
   worktree?: string;
@@ -80,6 +75,9 @@ export function FileExplorer({
   const { status } = useGitStatus(projectId, active, worktree);
   const [tabs, setTabs] = useState<OpenTabs>({ files: [], active: TREE });
   const [tick, setTick] = useState(0);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [selected, setSelected] = useState<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   // Re-list open folders (and re-read open files) periodically and whenever git sees a change.
   useEffect(() => {
@@ -91,16 +89,96 @@ export function FileExplorer({
 
   const decorations = useMemo(() => buildDecorations(status), [status]);
 
+  const listings = useListings(projectId, worktree, expanded, tick);
+  const { items, rows } = useMemo(() => flatten(listings, expanded), [listings, expanded]);
+
   const open = (path: string) =>
-    setTabs({ files: tabs.files.includes(path) ? tabs.files : [...tabs.files, path], active: path });
-  const close = (path: string) =>
-    setTabs((cur) => {
-      const next = closeTab(cur.files.map((p) => ({ id: p })), path, cur.active);
-      return { files: next.tabs.map((t) => t.id), active: next.active || TREE };
+    setTabs((cur) => ({ files: cur.files.includes(path) ? cur.files : [...cur.files, path], active: path }));
+  const close = (path: string) => setTabs((cur) => closeFile(cur, path));
+  const toggle = (path: string, open = !expanded.has(path)) =>
+    setExpanded((cur) => {
+      if (cur.has(path) === open) return cur;
+      const next = new Set(cur);
+      if (open) next.add(path);
+      else next.delete(path);
+      return next;
     });
 
+  // Ctrl/⌘+W closes the open file before the Files tab itself.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  useEffect(
+    () =>
+      onCloseInTab(tabId, () => {
+        const cur = tabsRef.current;
+        if (cur.active === TREE) return false;
+        setTabs(closeFile(cur, cur.active));
+        return true;
+      }),
+    [tabId],
+  );
+
+  // The selected row stays in view as it moves.
+  useEffect(() => {
+    if (!selected) return;
+    treeRef.current?.querySelector(`[data-path="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
+  // VS Code-style keys while the explorer has focus: arrows move and open/close, Enter opens,
+  // Esc backs out (file → tree → no selection → blur).
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (tabs.active !== TREE) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setTabs({ ...tabs, active: TREE });
+      return;
+    }
+    const i = rows.findIndex((r) => r.entry.path === selected);
+    const row = rows[i];
+    const select = (j: number) => rows[j] && setSelected(rows[j].entry.path);
+    switch (e.key) {
+      case "ArrowDown":
+        select(i < 0 ? 0 : Math.min(i + 1, rows.length - 1));
+        break;
+      case "ArrowUp":
+        select(i < 0 ? 0 : Math.max(i - 1, 0));
+        break;
+      case "Home":
+        select(0);
+        break;
+      case "End":
+        select(rows.length - 1);
+        break;
+      case "ArrowRight":
+        if (!row?.entry.isDir) break;
+        if (!expanded.has(row.entry.path)) toggle(row.entry.path, true);
+        else if ((rows[i + 1]?.depth ?? 0) > row.depth) select(i + 1);
+        break;
+      case "ArrowLeft":
+        if (!row) break;
+        if (row.entry.isDir && expanded.has(row.entry.path)) toggle(row.entry.path, false);
+        else if (parentOf(row.entry.path)) setSelected(parentOf(row.entry.path));
+        break;
+      case "Enter":
+        if (!row) break;
+        if (row.entry.isDir) toggle(row.entry.path);
+        else open(row.entry.path);
+        break;
+      case "Escape":
+        if (selected) setSelected(null);
+        else e.currentTarget.blur();
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   return (
-    <div className="flex h-full flex-col">
+    // Focusable as a whole (and focused by clicks anywhere in it), so its keys work on the
+    // tree and on an open file alike.
+    <div tabIndex={0} onKeyDown={onKeyDown} className="group/explorer flex h-full flex-col outline-none">
       <SubTabBar
         tabs={[
           { id: TREE, label: "", icon: <FolderTree />, title: "Explorer" },
@@ -118,10 +196,29 @@ export function FileExplorer({
         onTabPointerDown={(id, e) => id !== TREE && dragFileOut(groupId, id, e, () => close(id))}
       />
       <div className="relative min-h-0 flex-1">
-        <div className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
-          <Ctx.Provider value={{ groupId, projectId, worktree, tick, onOpen: open, ...decorations }}>
-            <DirNode path="" depth={0} />
-          </Ctx.Provider>
+        <div ref={treeRef} role="tree" className={cn("absolute inset-0 overflow-auto py-1", tabs.active !== TREE && "invisible")}>
+          {items.map((item) =>
+            "error" in item ? (
+              <p key={`!${item.path}`} style={{ paddingLeft: 12 + item.depth * 12 }} className="pr-2 text-xs text-destructive">
+                {item.error}
+              </p>
+            ) : (
+              <TreeRow
+                key={item.entry.path}
+                entry={item.entry}
+                depth={item.depth}
+                open={expanded.has(item.entry.path)}
+                selected={item.entry.path === selected}
+                deco={(item.entry.isDir ? decorations.dirs : decorations.files).get(item.entry.path)}
+                onClick={() => {
+                  setSelected(item.entry.path);
+                  if (item.entry.isDir) toggle(item.entry.path);
+                  else open(item.entry.path);
+                }}
+                onPointerDown={item.entry.isDir ? undefined : (e) => dragFileOut(groupId, item.entry.path, e)}
+              />
+            ),
+          )}
         </div>
         {tabs.active !== TREE && (
           <div className="absolute inset-0 flex flex-col">
@@ -201,89 +298,111 @@ function FileContent({
   if (content === null) return null;
   return <CodeView path={path} code={content} line={line} reveals={reveals} />;
 }
-function DirNode({ path, depth }: { path: string; depth: number }) {
-  const { projectId, worktree, tick } = useTree();
-  const [entries, setEntries] = useState<FileEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const last = useRef("");
+type Listing = { entries: FileEntry[] } | { error: string };
+type Row = { entry: FileEntry; depth: number };
+type Item = Row | { path: string; depth: number; error: string };
+
+/** Whether an open folder is showing: every folder above it is open too. */
+function isShown(path: string, expanded: ReadonlySet<string>) {
+  for (let p = parentOf(path); p; p = parentOf(p)) if (!expanded.has(p)) return false;
+  return true;
+}
+
+/** Lists the root and every open folder that is showing, again on every tick. */
+function useListings(projectId: string, worktree: string, expanded: ReadonlySet<string>, tick: number) {
+  const [listings, setListings] = useState<ReadonlyMap<string, Listing>>(() => new Map());
+  const last = useRef(new Map<string, string>());
+  // As a string, so re-renders with the same folders open don't re-list them.
+  const shown = ["", ...[...expanded].filter((p) => isShown(p, expanded))].join("\n");
 
   useEffect(() => {
     let cancelled = false;
-    FileService.List(projectId, worktree, path)
-      .then((list) => {
-        const json = JSON.stringify(list);
-        if (cancelled || json === last.current) return; // unchanged: no re-render
-        last.current = json;
-        setEntries(list ?? []);
-        setError(null);
-      })
-      .catch((e) => !cancelled && setError(String(e)));
+    const set = (dir: string, key: string, listing: Listing) => {
+      if (cancelled || last.current.get(dir) === key) return; // unchanged: no re-render
+      last.current.set(dir, key);
+      setListings((m) => new Map(m).set(dir, listing));
+    };
+    for (const dir of shown.split("\n")) {
+      FileService.List(projectId, worktree, dir)
+        .then((list) => set(dir, JSON.stringify(list), { entries: list ?? [] }))
+        .catch((e) => set(dir, `!${e}`, { error: String(e) }));
+    }
     return () => {
       cancelled = true;
     };
-  }, [projectId, worktree, path, tick]);
+  }, [projectId, worktree, shown, tick]);
 
-  if (error) return <p className="px-3 text-xs text-destructive">{error}</p>;
-  if (!entries) return null;
-
-  return (
-    <>
-      {entries.map((e) =>
-        e.isDir ? <DirEntry key={e.path} entry={e} depth={depth} /> : <FileRow key={e.path} entry={e} depth={depth} />,
-      )}
-    </>
-  );
+  return listings;
 }
 
-function DirEntry({ entry, depth }: { entry: FileEntry; depth: number }) {
-  const [open, setOpen] = useState(false);
-  const deco = useTree().dirs.get(entry.path);
-  return (
-    <>
-      <Row depth={depth} onClick={() => setOpen((o) => !o)}>
-        <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
-        <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className={cn("flex-1 truncate", deco?.className)}>{entry.name}</span>
-        {deco && <span className={cn("mr-1 size-1.5 shrink-0 rounded-full bg-current", deco.className)} />}
-      </Row>
-      {open && <DirNode path={entry.path} depth={depth + 1} />}
-    </>
-  );
+/**
+ * The tree's visible rows in order (what the keys move through), plus errors for folders that
+ * failed to list. Folders not listed yet show nothing below them.
+ */
+function flatten(listings: ReadonlyMap<string, Listing>, expanded: ReadonlySet<string>) {
+  const items: Item[] = [];
+  const walk = (dir: string, depth: number) => {
+    const listing = listings.get(dir);
+    if (!listing) return;
+    if ("error" in listing) return void items.push({ path: dir, depth, error: listing.error });
+    for (const entry of listing.entries) {
+      items.push({ entry, depth });
+      if (entry.isDir && expanded.has(entry.path)) walk(entry.path, depth + 1);
+    }
+  };
+  walk("", 0);
+  return { items, rows: items.filter((i): i is Row => "entry" in i) };
 }
 
-function FileRow({ entry, depth }: { entry: FileEntry; depth: number }) {
-  const { groupId, files, onOpen } = useTree();
-  const deco = files.get(entry.path);
-  return (
-    <Row depth={depth} onClick={() => onOpen(entry.path)} onPointerDown={(e) => dragFileOut(groupId, entry.path, e)}>
-      <span className="w-3 shrink-0" />
-      <File className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className={cn("flex-1 truncate", deco?.className)}>{entry.name}</span>
-      {deco && <span className={cn("w-3 shrink-0 text-center font-mono text-[11px]", deco.className)}>{deco.letter}</span>}
-    </Row>
-  );
-}
-
-function Row({
+function TreeRow({
+  entry,
   depth,
+  open,
+  selected,
+  deco,
   onClick,
   onPointerDown,
-  children,
 }: {
+  entry: FileEntry;
   depth: number;
+  open: boolean;
+  selected: boolean;
+  deco?: Decoration;
   onClick: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
-  children: React.ReactNode;
 }) {
   return (
     <div
-      role="button"
+      role="treeitem"
+      aria-selected={selected}
+      aria-expanded={entry.isDir ? open : undefined}
+      data-path={entry.path}
       onClick={onClick}
       onPointerDown={onPointerDown}
       style={{ paddingLeft: 8 + depth * 12 }}
-      className="flex h-6 cursor-default items-center gap-1.5 pr-2 text-xs hover:bg-accent/60"
+      className={cn(
+        "flex h-6 cursor-default items-center gap-1.5 pr-2 text-xs",
+        // Selected: muted while the explorer doesn't have focus, outlined while it does.
+        selected
+          ? "bg-accent/50 ring-inset group-focus/explorer:bg-accent group-focus/explorer:ring-1 group-focus/explorer:ring-ring/50"
+          : "hover:bg-accent/60",
+      )}
     >
-      {children}
+      {entry.isDir ? (
+        <>
+          <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn("flex-1 truncate", deco?.className)}>{entry.name}</span>
+          {deco && <span className={cn("mr-1 size-1.5 shrink-0 rounded-full bg-current", deco.className)} />}
+        </>
+      ) : (
+        <>
+          <span className="w-3 shrink-0" />
+          <File className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn("flex-1 truncate", deco?.className)}>{entry.name}</span>
+          {deco && <span className={cn("w-3 shrink-0 text-center font-mono text-[11px]", deco.className)}>{deco.letter}</span>}
+        </>
+      )}
     </div>
   );
 }

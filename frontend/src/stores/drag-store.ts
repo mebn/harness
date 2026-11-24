@@ -8,8 +8,11 @@ export type DragTarget =
   | { kind: "layout"; target: DropTarget }
   /** An existing group (sidebar row) of the same workspace. */
   | { kind: "group"; groupId: string }
-  /** Anywhere else in the sidebar: a new group. */
-  | { kind: "newGroup" };
+  /**
+   * Anywhere else in the sidebar: a new group, at `index` among the workspace's groups when the
+   * pointer is over them (else where the sort puts it).
+   */
+  | { kind: "newGroup"; index?: number };
 
 /**
  * The source group's geometry when the drag started, in viewport coordinates. Hit-testing
@@ -65,7 +68,7 @@ export const useDrag = create<DragState>((set, get) => ({
     const t = drag.target;
     if (t.kind === "layout") groups.drop(drag.groupId, drag.payload, t.target, drag.newPaneId);
     else if (t.kind === "group") groups.moveToGroup(drag.groupId, drag.payload, t.groupId);
-    else groups.moveToNewGroup(drag.groupId, drag.payload);
+    else groups.moveToNewGroup(drag.groupId, drag.payload, t.index);
     drag.onDrop?.();
   },
 }));

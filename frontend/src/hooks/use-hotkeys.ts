@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { TAB_KINDS, findPane, panesOf, sizeKind } from "@/lib/layout-tree";
+import { requestCloseGroup, requestClosePane, requestCloseTab } from "@/lib/close-guard";
 import { findShortcut, isMac, useShortcuts, type ShortcutId } from "@/lib/shortcuts";
+import { closeInTab } from "@/lib/tab-close";
 import { useGroups } from "@/stores/group-store";
 import { useLayout } from "@/stores/layout-store";
 import { useDrag } from "@/stores/drag-store";
@@ -15,11 +17,11 @@ function run(id: ShortcutId, index: number) {
   const group = groups.groups.find((g) => g.id === groups.activeId);
   const pane = group && findPane(group.root, group.focused);
 
-  // Closing the last, empty window of a group closes the group.
+  // Closing the last, empty window of a group closes the group. Running chats and commands ask first.
   const closeWindow = () => {
     if (!group || !pane) return;
-    if (panesOf(group.root).length === 1 && pane.tabs.length === 0) return groups.closeGroup(group.id);
-    groups.closePane(group.id, pane.id);
+    if (panesOf(group.root).length === 1 && pane.tabs.length === 0) return void requestCloseGroup(group.id);
+    void requestClosePane(group.id, pane.id);
   };
 
   // Text size follows the kind of tab in the focused window.
@@ -47,11 +49,13 @@ function run(id: ShortcutId, index: number) {
     case "maximize":
       return group && pane && groups.toggleMaximize(group.id, pane.id);
     case "closeTab":
+      // The tab may close something of its own first (a file open in the explorer).
+      if (pane?.active && closeInTab(pane.active)) return;
       // The last tab of a group's only window takes the (then empty) group with it.
       if (group && pane?.active && panesOf(group.root).length === 1 && pane.tabs.length === 1) {
-        return groups.closeGroup(group.id);
+        return void requestCloseGroup(group.id);
       }
-      if (group && pane?.active) return groups.closeTab(group.id, pane.active);
+      if (group && pane?.active) return void requestCloseTab(group.id, pane.active);
       return closeWindow();
     case "closeWindow":
       return closeWindow();

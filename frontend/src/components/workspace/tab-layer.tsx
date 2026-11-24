@@ -40,8 +40,8 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
               onPointerLeave={() => setHovered(null)}
               className={cn(
                 "absolute overflow-hidden",
-                animate[group.id] !== false && "layout-anim",
-                !shown && "pointer-events-none invisible",
+                animate[group.id] === true && "layout-anim",
+                !shown && "layer-hidden",
               )}
               style={place?.style ?? { inset: 0 }}
             >
@@ -101,6 +101,7 @@ const TabContent = memo(function TabContent({
       // A restart (or switching to administrator) is a fresh shell.
       <TerminalView
         key={`${tab.admin ? "admin" : "user"}:${tab.restarts ?? 0}`}
+        tabId={tab.id}
         projectId={projectId}
         worktree={worktree}
         admin={!!tab.admin}
@@ -136,7 +137,7 @@ function ScaledContent({
     case "changes":
       return <GitChanges projectId={projectId} worktree={worktree} active={visible} />;
     case "files":
-      return <FileExplorer key={worktree} groupId={groupId} projectId={projectId} worktree={worktree} active={visible} />;
+      return <FileExplorer key={worktree} tabId={tab.id} groupId={groupId} projectId={projectId} worktree={worktree} active={visible} />;
     case "file":
       return tab.path ? (
         <FileTab projectId={projectId} worktree={worktree} path={tab.path} line={tab.line} reveals={tab.reveals ?? 0} active={visible} />

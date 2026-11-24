@@ -24,7 +24,6 @@ export type {
     ChatQueue,
     ChatStatus,
     ChatTasks,
-    ClaudeChat,
     FileEntry,
     ForkResult,
     PendingRequest,

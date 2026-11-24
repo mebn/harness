@@ -26,19 +26,19 @@ export function UsageIndicator({ session }: { session: Session }) {
 
   const windows = snap?.windows ?? [];
   const context = contextUsage(session);
-  if (windows.length === 0 && !context) return null;
 
-  // Context first, then each plan window (5h, week / month).
-  const items: Item[] = [];
-  if (context) {
-    items.push({
+  // Context first (empty until a turn reports it), then each plan window (5h, week / month).
+  const items: Item[] = [
+    {
       id: "context",
       label: "Context",
-      used: context.used,
+      used: context?.used ?? 0,
       explain: "How much of the model's context window this chat fills. Near the limit, Claude compacts older parts of the conversation.",
-      detail: `${formatTokens(context.tokens)} of ${formatTokens(context.window)} tokens · ${Math.round((1 - context.used) * 100)}% left`,
-    });
-  }
+      detail: context
+        ? `${formatTokens(context.tokens)} of ${formatTokens(context.window)} tokens · ${Math.round((1 - context.used) * 100)}% left`
+        : "Shown after the first reply",
+    },
+  ];
   for (const w of windows) {
     items.push({
       id: w.id,

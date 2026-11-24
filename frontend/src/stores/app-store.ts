@@ -83,7 +83,6 @@ type AppState = {
   rewind: (sessionId: string, messageId: string, conversation: boolean, files: boolean) => Promise<RewindResult>;
   /** Starts a new chat with the conversation before a message; returns it. */
   fork: (sessionId: string, messageId: string) => Promise<Session>;
-  importClaudeChat: (projectId: string, worktree: string, id: string) => Promise<Session>;
   takeDraft: (sessionId: string) => string | undefined;
 
   // Backend event handlers
@@ -153,7 +152,7 @@ export const useApp = create<AppState>((set, get) => ({
   addProject: async () => {
     // A runtime call, so the native picker opens in the desktop window (not on the server).
     const path = await Dialogs.OpenFile({
-      Title: "Open folder",
+      Title: "Add workspace",
       CanChooseDirectories: true,
       CanChooseFiles: false,
       CanCreateDirectories: true,
@@ -279,12 +278,6 @@ export const useApp = create<AppState>((set, get) => ({
     await get().refreshTree();
     set({ drafts: { ...get().drafts, [res.session.id]: res.text } });
     return res.session;
-  },
-
-  importClaudeChat: async (projectId, worktree, id) => {
-    const session = await ChatService.ImportClaudeChat(projectId, worktree, id);
-    await get().refreshTree();
-    return session;
   },
 
   takeDraft: (sessionId) => {

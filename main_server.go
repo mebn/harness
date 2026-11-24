@@ -103,7 +103,7 @@ func main() {
 	})
 	host.SetHooks(func() (int, int) { return services.Activity(chat, terms) }, app.Quit)
 	defer host.Close()
-	setupTray(app, host)
+	setupTray(app, host, transport)
 	log.Printf("server listening on %s (pid %d)", host.Info.BaseURL(), host.Info.PID)
 
 	if err := app.Run(); err != nil {

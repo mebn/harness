@@ -4,6 +4,10 @@ import { storage } from "@/lib/storage";
 
 const SPLIT_KEY = "harness.splitStrategy";
 const FONT_KEY = "harness.fontSizes";
+const SEND_KEY = "harness.sendWhileRunning";
+
+/** What sending a message does while the agent is working: wait for the turn, or go in now. */
+export type SendMode = "queue" | "steer";
 
 type SizeMeta = {
   /** The size the content is designed at (scale 1). Scaled content is zoomed by size / base. */
@@ -85,6 +89,9 @@ function loadFontSizes(): Partial<Record<ContentKind, number>> {
 }
 
 type SettingsState = {
+  /** What Enter does while a turn runs; Alt+Enter does the other. */
+  sendWhileRunning: SendMode;
+  setSendWhileRunning: (mode: SendMode) => void;
   /** How a new window is placed in a group. */
   splitStrategy: SplitStrategy;
   setSplitStrategy: (s: SplitStrategy) => void;
@@ -108,6 +115,12 @@ export const useSettings = create<SettingsState>((set, get) => {
     set({ fontSizes });
   };
   return {
+    sendWhileRunning: storage.get(SEND_KEY) === "queue" ? "queue" : "steer",
+    setSendWhileRunning: (sendWhileRunning) => {
+      storage.set(SEND_KEY, sendWhileRunning);
+      set({ sendWhileRunning });
+    },
+
     splitStrategy: loadStrategy(),
     setSplitStrategy: (splitStrategy) => {
       storage.set(SPLIT_KEY, splitStrategy);

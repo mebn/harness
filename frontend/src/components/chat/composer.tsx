@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ListPlus, Paperclip, Square } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowUp, CornerDownRight, ListPlus, Paperclip, Square } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
 import { Button } from "@/components/ui/button";
 import { releasePreviews, toInputs, useAttachments } from "@/hooks/use-attachments";
@@ -7,6 +7,7 @@ import type { Session } from "@/lib/backend";
 import { isMac } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
+import { useSettings } from "@/stores/settings-store";
 import { AttachmentChips } from "./attachment-chips";
 import { LocationPicker } from "./location-picker";
 import { ModelPicker } from "./model-picker";
@@ -18,7 +19,8 @@ import { UsageIndicator } from "./usage-indicator";
 
 const MAX_HEIGHT = 240;
 
-export function Composer({ session, visible }: { session: Session; visible: boolean }) {
+/** `status` goes on the left of the row above the input (the usage indicator is on the right). */
+export function Composer({ session, visible, status }: { session: Session; visible: boolean; status?: ReactNode }) {
   const [text, setText] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -70,7 +72,10 @@ export function Composer({ session, visible }: { session: Session; visible: bool
       void submit(false, `/${name}`);
     }
   };
-  // While a turn runs, sending queues the message (Alt+Enter steers it in right away).
+  // While a turn runs, Enter queues the message or steers it in right away (per the setting);
+  // Alt+Enter does the other.
+  const steerByDefault = useSettings((s) => s.sendWhileRunning === "steer");
+  const alt = isMac ? "⌥" : "Alt+";
   const canSend = text.trim() !== "" || attachments.items.length > 0;
   const error = sendError ?? attachments.error;
 
@@ -87,7 +92,8 @@ export function Composer({ session, visible }: { session: Session; visible: bool
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
   }, [text]);
 
-  const submit = async (steerNow = false, override?: string) => {
+  const submit = async (otherMode = false, override?: string) => {
+    const steerNow = otherMode !== steerByDefault;
     if (!canSend && override === undefined) return;
     const prompt = (override ?? text).trim();
     const pending = attachments.take();
@@ -110,7 +116,8 @@ export function Composer({ session, visible }: { session: Session; visible: bool
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-4">
       {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
-      <div className="mb-1 flex justify-end">
+      <div className="mb-1 flex min-h-6 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">{status}</div>
         <UsageIndicator session={session} />
       </div>
       <PermissionPrompt sessionId={session.id} />
@@ -159,7 +166,9 @@ export function Composer({ session, visible }: { session: Session; visible: bool
           rows={1}
           placeholder={
             running
-              ? `Queue a message… (${isMac ? "⌥" : "Alt+"}↵ to steer)`
+              ? steerByDefault
+                ? `Steer the agent… (${alt}↵ to queue)`
+                : `Queue a message… (${alt}↵ to steer)`
               : provider.interactive
                 ? "Ask anything… (/ for commands)"
                 : "Ask anything…"
@@ -236,10 +245,22 @@ export function Composer({ session, visible }: { session: Session; visible: bool
               className="ml-1 size-8 rounded-lg"
               disabled={!canSend}
               onClick={(e) => void submit(e.altKey)}
-              aria-label={running ? "Queue" : "Send"}
-              title={running ? `Queue (↵) · steer now (${isMac ? "⌥" : "Alt+"}↵)` : undefined}
+              aria-label={running ? (steerByDefault ? "Steer" : "Queue") : "Send"}
+              title={
+                running
+                  ? steerByDefault
+                    ? `Steer now (↵) · queue (${alt}↵)`
+                    : `Queue (↵) · steer now (${alt}↵)`
+                  : undefined
+              }
             >
-              {running ? <ListPlus className="size-4" /> : <ArrowUp className="size-4" />}
+              {!running ? (
+                <ArrowUp className="size-4" />
+              ) : steerByDefault ? (
+                <CornerDownRight className="size-4" />
+              ) : (
+                <ListPlus className="size-4" />
+              )}
             </Button>
           )}
         </div>

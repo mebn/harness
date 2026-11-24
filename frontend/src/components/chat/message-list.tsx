@@ -44,7 +44,7 @@ export function MessageList({ messages, running }: Props) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]">
         <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
           {messages.map((m) => (
             <MessageItem key={m.id} message={m} />

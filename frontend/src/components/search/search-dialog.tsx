@@ -173,8 +173,8 @@ function useActions(close: () => void): Action[] {
         ]
       : []),
     {
-      id: "open-folder",
-      label: "Open folder",
+      id: "add-workspace",
+      label: "Add workspace",
       icon: FolderPlus,
       run: run(async () => {
         const id = await addProject();

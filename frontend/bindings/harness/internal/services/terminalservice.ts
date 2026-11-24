@@ -10,6 +10,14 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
+/**
+ * Busy returns the terminals among ids that are running a command (the shell has a child
+ * process). Terminals where that can't be seen (WSL, administrator) are never busy.
+ */
+export function Busy(ids: string[] | null): $CancellablePromise<string[] | null> {
+    return $Call.ByID(501161958, ids);
+}
+
 export function Close(id: string): $CancellablePromise<void> {
     return $Call.ByID(1566162337, id);
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FileText } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { ImagePreview } from "@/components/common/image-preview";
 import type { Part } from "@/lib/backend";
 
 const isImage = (p: Part) => !!p.mimeType?.startsWith("image/");
@@ -14,7 +14,7 @@ export function AttachmentView({ parts }: { parts: Part[] }) {
     <div className="flex flex-wrap justify-end gap-2">
       {parts.map((p, i) =>
         isImage(p) ? (
-          <button key={i} onClick={() => setOpen(p)} className="overflow-hidden rounded-xl border" title={p.fileName}>
+          <button key={i} onClick={() => setOpen(p)} className="cursor-zoom-in overflow-hidden rounded-xl border" title={p.fileName}>
             <img src={p.url} alt={p.fileName} loading="lazy" className="max-h-48 max-w-64 object-cover" />
           </button>
         ) : (
@@ -25,13 +25,7 @@ export function AttachmentView({ parts }: { parts: Part[] }) {
         ),
       )}
 
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <DialogContent className="w-auto max-w-[90vw] p-2 sm:max-w-[90vw]">
-          <DialogTitle className="sr-only">{open?.fileName}</DialogTitle>
-          <DialogDescription className="sr-only">Image preview</DialogDescription>
-          {open && <img src={open.url} alt={open.fileName} className="max-h-[85vh] max-w-full rounded-md object-contain" />}
-        </DialogContent>
-      </Dialog>
+      <ImagePreview src={open?.url ?? null} alt={open?.fileName} open={!!open} onOpenChange={(o) => !o && setOpen(null)} />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
 import { useGroupTitle } from "@/components/workspace/tab-meta";
 import { panesOf, tabsOf } from "@/lib/layout-tree";
 import { sessionState, strongest } from "@/lib/session-state";
+import { requestCloseGroup } from "@/lib/close-guard";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { timeAgo, useNow } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -26,11 +27,9 @@ type Props = {
   group: Group;
   /** Being dragged to a new position. */
   dragging?: boolean;
-  /** A dragged group will land on this side of the row. */
-  dropEdge?: "before" | "after";
 };
 
-export function GroupItem({ group, dragging, dropEdge }: Props) {
+export function GroupItem({ group, dragging }: Props) {
   const [editingByMenu, setEditing] = useState(false);
   // The ⋯ menu; right-clicking the row opens it too.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,7 +43,6 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
 
   const active = useGroups((s) => s.activeId === group.id);
   const reveal = useGroups((s) => s.reveal);
-  const closeGroup = useGroups((s) => s.closeGroup);
   const renameGroup = useGroups((s) => s.renameGroup);
   const renameSession = useApp((s) => s.renameSession);
   const title = useGroupTitle(group);
@@ -87,15 +85,12 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
   };
 
   return (
-    <div data-drop-group={group.id} data-project={group.projectId} className={cn("relative", dragging && "opacity-40")}>
-      {dropEdge && (
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-ring",
-            dropEdge === "before" ? "-top-[2px]" : "-bottom-[2px]",
-          )}
-        />
-      )}
+    <div
+      data-flip-key={group.id}
+      data-drop-group={group.id}
+      data-project={group.projectId}
+      className={cn("relative rounded-lg", dragging && "z-20 bg-(--backdrop) shadow-lg ring-1 ring-sidebar-border")}
+    >
       <div
         role="button"
         onClick={() => reveal(group.id)}
@@ -105,8 +100,8 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
         }}
         onDoubleClick={() => setEditing(true)}
         className={cn(
-          "group flex cursor-default rounded-lg px-2 py-1.5 text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          active && "bg-sidebar-accent text-sidebar-accent-foreground",
+          "group flex cursor-default rounded-lg px-2 py-1.5 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          active && "bg-sidebar-accent text-sidebar-accent-foreground shadow-[0_1px_2px_rgb(0_0_0/0.05)]",
           dropTarget && "bg-ring/15 text-foreground ring-1 ring-ring/60",
         )}
       >
@@ -141,7 +136,7 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
                       Rename
                       <DropdownMenuShortcut>{shortcutLabel("renameGroup")}</DropdownMenuShortcut>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => closeGroup(group.id)}>
+                    <DropdownMenuItem onSelect={() => void requestCloseGroup(group.id)}>
                       Close group
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -149,7 +144,7 @@ export function GroupItem({ group, dragging, dropEdge }: Props) {
               </HoverSwap>
             )}
           </div>
-          <div className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground/80">
+          <div className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground/70">
             <span className="shrink-0">{summary}</span>
             {group.worktree && (
               <>

@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@/lib/backend";
+import { OpenAgentContext } from "./agent-call";
+import { AgentDialog, AgentsOverview, collectAgents } from "./agent-view";
 import { useApp, useSession } from "@/stores/app-store";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
@@ -29,22 +31,59 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
     if (visible) markSeen(sessionId);
   }, [visible, sessionId, updatedAt, running, markSeen]);
 
+  const shown = useMemo(() => settleStale(messages, running), [messages, running]);
+
+  // Subagents: a chip above the input lists them, and one opens in a dialog.
+  const agents = useMemo(() => collectAgents(shown), [shown]);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const openAgent = useCallback((toolId: string) => {
+    setViewing(toolId);
+    setViewOpen(true);
+  }, []);
+
   if (!session) {
     return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Chat not found</div>;
   }
 
   return (
-    <div ref={container} className="flex h-full min-w-0 flex-col">
-      {messages.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-muted-foreground">
-          <span className="text-lg font-medium text-foreground/70">{project?.name}</span>
-        </div>
-      ) : (
-        <MessageList messages={messages} running={running} />
-      )}
-      <Composer session={session} visible={visible} />
-    </div>
+    <OpenAgentContext.Provider value={openAgent}>
+      <div ref={container} className="flex h-full min-w-0 flex-col">
+        {shown.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center text-muted-foreground">
+            <span className="text-lg font-medium text-foreground/70">{project?.name}</span>
+          </div>
+        ) : (
+          <MessageList messages={shown} running={running} />
+        )}
+        <Composer
+          session={session}
+          visible={visible}
+          status={agents.length > 0 && <AgentsOverview agents={agents} onOpen={openAgent} />}
+        />
+        <AgentDialog entry={agents.find((a) => a.part.toolId === viewing)} open={viewOpen} onOpenChange={setViewOpen} />
+      </div>
+    </OpenAgentContext.Provider>
   );
+}
+
+/**
+ * Tool calls and thinking left open by a turn that ended without closing them (cut off, or the
+ * server restarted mid-turn) show as finished, not spinning forever. While a turn runs, only
+ * its own replies, after the latest user message, can still be in progress.
+ */
+function settleStale(messages: Message[], running: boolean): Message[] {
+  let live = messages.length;
+  if (running) {
+    while (live > 0 && messages[live - 1].role !== "user") live--;
+  }
+  let changed = false;
+  const out = messages.map((m, i) => {
+    if (i >= live || (m.parts ?? []).every((p) => p.done || (p.type !== "tool" && p.type !== "thinking"))) return m;
+    changed = true;
+    return { ...m, parts: (m.parts ?? []).map((p) => (p.type === "tool" || p.type === "thinking" ? { ...p, done: true } : p)) };
+  });
+  return changed ? out : messages;
 }
 
 /**

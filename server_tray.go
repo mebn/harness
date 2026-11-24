@@ -24,13 +24,14 @@ const trayRefresh = 2 * time.Second
 
 // setupTray shows the server in the Windows notification area / macOS menu bar:
 // what it's doing, a way to open the window, and a way to quit it.
-func setupTray(app *application.App, host *server.Host) {
+func setupTray(app *application.App, host *server.Host, transport *server.Transport) {
 	menu := application.NewMenu()
 	status := menu.Add("Starting…").SetEnabled(false)
 	menu.AddSeparator()
 	menu.Add("Open Harness").OnClick(func(*application.Context) { openWindow() })
 	menu.AddSeparator()
-	quit := menu.Add("Quit Harness Server").OnClick(func(*application.Context) { app.Quit() })
+	// Windows close along with the server.
+	quit := menu.Add("Quit Harness Server").OnClick(func(*application.Context) { go transport.QuitWithWindows(app.Quit) })
 
 	tray := app.SystemTray.New()
 	tray.SetIcon(trayIcon)

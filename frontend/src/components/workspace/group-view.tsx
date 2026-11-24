@@ -25,6 +25,7 @@ import {
   type Tab,
   type TabKind,
 } from "@/lib/layout-tree";
+import { requestClosePane, requestCloseTab } from "@/lib/close-guard";
 import { shortcutLabel } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useDrag, type Drag, type DragTarget, type FrozenGeometry } from "@/stores/drag-store";
@@ -44,6 +45,8 @@ const EDGE_ZONE = 0.25;
 
 type Ctx = {
   group: Group;
+  /** False until the group has been shown once; windows there from the start don't fade in. */
+  settled: boolean;
   /** Starts tracking a press that becomes a drag once the pointer moves. */
   press: Press;
   /** The payload being dragged out of this group, if any. */
@@ -76,18 +79,32 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
   const drag = useDrag((s) => (s.drag?.groupId === group.id ? s.drag : null));
   const setViewport = useGroups((s) => s.setViewport);
 
-  useEffect(() => {
+  // Measured before the first paint, so a group opens already laid out.
+  useLayoutEffect(() => {
     const el = container.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const width = el.clientWidth;
       const height = el.clientHeight;
       setSize((s) => (s.width === width && s.height === height ? s : { width, height }));
       if (width > 0 && height > 0) setViewport(group.id, width, height);
-    });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [group.id, setViewport]);
+
+  // Nothing animates until the group has been shown laid out once: opening it doesn't slide
+  // windows in from the corner.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (settled || size.width === 0) return;
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => setSettled(true));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [settled, size.width]);
 
   // What is shown: the real layout, or the result of the drop being hovered.
   const shown = useMemo(() => {
@@ -175,7 +192,7 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
   const rectsRef = useRef(rects);
   rectsRef.current = rects;
 
-  const ctx: Ctx = { group, press, dragging: drag?.payload ?? null };
+  const ctx: Ctx = { group, settled, press, dragging: drag?.payload ?? null };
   const hiddenPane = (id: string) => !!maximized && maximized.id !== id;
 
   // Tell the shared tab layer where this group's tabs go. Tabs of the real layout are all
@@ -190,12 +207,12 @@ export function GroupView({ group, active }: { group: Group; active: boolean }) 
       if (!pane || !rect) continue;
       placements[tab.id] = { paneId: pane.id, style: bodyRect(rect, size), shown: pane.active === tab.id && !hiddenPane(pane.id) };
     }
-    report(group.id, placements, !resizing);
+    report(group.id, placements, settled && !resizing);
   });
 
   return (
     <GroupCtx.Provider value={ctx}>
-      <div ref={container} className={cn("relative h-full overflow-hidden", (resizing || size.width === 0) && "no-anim")}>
+      <div ref={container} className={cn("relative h-full overflow-hidden", (resizing || !settled) && "no-anim")}>
         {panes.map((pane) => (
           <PaneFrame key={pane.id} pane={pane} rect={rects[pane.id]} size={size} hidden={hiddenPane(pane.id)} />
         ))}
@@ -262,12 +279,12 @@ function freeze(container: HTMLElement | null, rects: Record<string, Rect>): Fro
 /** Where the pointer would drop: a sidebar row, the sidebar, or a spot in the source group. */
 function hitTest(x: number, y: number, drag: Drag): DragTarget | null {
   const el = document.elementsFromPoint(x, y).find((e) => !e.closest("[data-drag-overlay]"));
-  const row = el?.closest<HTMLElement>("[data-drop-group]");
-  if (row) {
-    const { dropGroup, project } = row.dataset;
-    return dropGroup !== drag.groupId && project === drag.projectId ? { kind: "group", groupId: dropGroup! } : null;
+  if (el?.closest("[data-drop-sidebar]")) {
+    // Another workspace's groups can't take it.
+    const row = el.closest<HTMLElement>("[data-drop-group]");
+    if (row && row.dataset.project !== drag.projectId) return null;
+    return sidebarTarget(y, drag);
   }
-  if (el?.closest("[data-drop-sidebar]")) return { kind: "newGroup" };
 
   for (const pane of drag.geometry.panes) {
     const r = pane.rect;
@@ -292,6 +309,34 @@ function hitTest(x: number, y: number, drag: Drag): DragTarget | null {
     };
   }
   return null;
+}
+
+/** Share of a sidebar row's height, at its top and bottom, that places a new group beside it. */
+const ROW_EDGE = 0.25;
+
+/**
+ * Over the sidebar: into the group row under the pointer, or a new group at the pointer's place
+ * among the workspace's groups. The new group's placeholder pushes the rows below it down, so
+ * rows are measured as if it weren't there: the target doesn't flip back and forth as it moves.
+ */
+function sidebarTarget(y: number, drag: Drag): DragTarget {
+  const list = document.querySelector<HTMLElement>(`[data-group-list="${CSS.escape(drag.projectId)}"]`);
+  // The workspace is folded: the new group goes where the sort puts it.
+  if (!list) return { kind: "newGroup" };
+  const box = list.getBoundingClientRect();
+  const placeholder = list.querySelector<HTMLElement>(":scope > [data-group-placeholder]");
+  const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+  const rows = [...list.querySelectorAll<HTMLElement>(":scope > [data-drop-group]")].map((r) => {
+    let top = box.top + r.offsetTop;
+    if (placeholder && r.offsetTop > placeholder.offsetTop) top -= placeholder.offsetHeight + gap;
+    return { id: r.dataset.dropGroup!, top, height: r.offsetHeight };
+  });
+  const over = rows.find((r) => y >= r.top && y < r.top + r.height);
+  if (over && over.id !== drag.groupId) {
+    const f = (y - over.top) / over.height;
+    if (f > ROW_EDGE && f < 1 - ROW_EDGE) return { kind: "group", groupId: over.id };
+  }
+  return { kind: "newGroup", index: rows.filter((r) => r.top + r.height / 2 < y).length };
 }
 
 function findSplit(node: LayoutNode, id: string): SplitNode | undefined {
@@ -380,9 +425,11 @@ function Gutter({
 
 /** A window's card: header with its tabs and actions; the body is covered by the active tab. */
 function PaneFrame({ pane, rect, size, hidden }: { pane: PaneNode; rect: Rect | undefined; size: Size; hidden: boolean }) {
-  const { group, dragging } = useGroupCtx();
+  const { group, settled, dragging } = useGroupCtx();
   const setHovered = useTabLayer((st) => st.setHovered);
   const focused = group.focused === pane.id;
+  // Only windows opened after the group is on screen fade in.
+  const [fadeIn] = useState(settled);
   const isDragged = dragging?.kind === "pane" && dragging.paneId === pane.id;
 
   if (!rect) return null;
@@ -393,7 +440,8 @@ function PaneFrame({ pane, rect, size, hidden }: { pane: PaneNode; rect: Rect | 
       onPointerEnter={() => setHovered({ groupId: group.id, paneId: pane.id })}
       onPointerLeave={() => setHovered(null)}
       className={cn(
-        "pane-card layout-anim absolute flex flex-col animate-in fade-in-0 zoom-in-[0.98] duration-200",
+        "pane-card layout-anim absolute flex flex-col",
+        fadeIn && "animate-in fade-in-0 zoom-in-[0.98] duration-200",
         focused && "pane-card-focused",
         hidden && "pointer-events-none opacity-0",
         isDragged && "opacity-60",
@@ -481,7 +529,7 @@ function WindowMenuItems({ paneId }: { paneId: string }) {
         <DropdownMenuShortcut>{shortcutLabel("maximize")}</DropdownMenuShortcut>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => store.closePane(group.id, paneId)}>
+      <DropdownMenuItem onSelect={() => void requestClosePane(group.id, paneId)}>
         <X /> Close window
         <DropdownMenuShortcut>{shortcutLabel("closeWindow")}</DropdownMenuShortcut>
       </DropdownMenuItem>
@@ -511,7 +559,7 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
         press(e, { kind: "tab", tabId: tab.id }, label, tab.kind);
       }}
       onClick={() => store.selectTab(group.id, tab.id)}
-      onAuxClick={(e) => e.button === 1 && store.closeTab(group.id, tab.id)}
+      onAuxClick={(e) => e.button === 1 && void requestCloseTab(group.id, tab.id)}
       className={cn(
         "group/tab relative flex h-7 max-w-56 shrink-0 cursor-default items-center gap-1.5 rounded-lg pr-2.5 pl-1.5 text-[13px]",
         single
@@ -530,7 +578,7 @@ function TabButton({ tab, index, selected, single }: { tab: Tab; index: number; 
           title={`Close tab (${shortcutLabel("closeTab")})`}
           onClick={(e) => {
             e.stopPropagation();
-            store.closeTab(group.id, tab.id);
+            void requestCloseTab(group.id, tab.id);
           }}
           className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-foreground/10 hover:text-foreground"
         >
@@ -583,7 +631,7 @@ function TabMenu({ tab, open, onOpenChange }: { tab: Tab; open: boolean; onOpenC
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={() => store.closeTab(group.id, tab.id)}>
+        <DropdownMenuItem onSelect={() => void requestCloseTab(group.id, tab.id)}>
           <X /> Close tab
           <DropdownMenuShortcut>{shortcutLabel("closeTab")}</DropdownMenuShortcut>
         </DropdownMenuItem>
