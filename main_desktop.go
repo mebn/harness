@@ -135,9 +135,11 @@ func newMainWindow(app *application.App) *application.WebviewWindow {
 		MinHeight: 560,
 		// The app draws its own title bar; macOS keeps native traffic lights via HiddenInset.
 		Frameless: runtime.GOOS != "darwin",
+		// Dragging comes from the page's --wails-draggable regions only. Wails'
+		// InvisibleTitleBarHeight is left unset: it drags from every click in the top strip,
+		// the traffic lights included, before they see it.
 		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 40,
-			TitleBar:                application.MacTitleBarHiddenInset,
+			TitleBar: application.MacTitleBarHiddenInset,
 		},
 		// Solid, matching the light theme's backdrop until the page paints its own.
 		BackgroundColour: application.NewRGB(238, 238, 238),

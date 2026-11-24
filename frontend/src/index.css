@@ -31,15 +31,16 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0 0 0 / 8%);
 
-  /* Solid background behind the sidebar and title bar. */
+  /* Solid background behind the sidebar; the title bar is white like the windows. */
   --backdrop: oklch(0.955 0 0);
+  --titlebar: oklch(1 0 0);
   --pane: oklch(0.99 0 0);
   --pane-focused: oklch(1 0 0);
   --pane-border: oklch(0 0 0 / 12%);
 }
 
 .dark {
-  --background: oklch(0.185 0 0);
+  --background: oklch(0 0 0);
   --foreground: oklch(0.95 0 0);
   --card: oklch(0.215 0 0);
   --card-foreground: oklch(0.95 0 0);
@@ -57,15 +58,18 @@
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.5 0 0);
-  --sidebar: oklch(0.16 0 0);
+  --sidebar: oklch(0 0 0);
   --sidebar-foreground: oklch(0.9 0 0);
   --sidebar-accent: oklch(1 0 0 / 7%);
   --sidebar-accent-foreground: oklch(0.95 0 0);
   --sidebar-border: oklch(1 0 0 / 7%);
 
-  --backdrop: oklch(0.155 0 0);
-  --pane: oklch(0.195 0 0);
-  --pane-focused: oklch(0.205 0 0);
+  /* True black throughout: the sidebar, title bar and windows are one surface, set apart by
+     borders only. */
+  --backdrop: oklch(0 0 0);
+  --titlebar: oklch(0 0 0);
+  --pane: oklch(0 0 0);
+  --pane-focused: oklch(0 0 0);
   --pane-border: oklch(1 0 0 / 12%);
 }
 
@@ -150,7 +154,9 @@
 /*
  * A window card, on the backdrop like the sidebar and title bar.
  * The focused one is a shade brighter. Windows sit edge to edge, so each draws only
- * its right and bottom border and the group area draws the top and left: every seam is one line.
+ * its right and bottom border and the line beside the sidebar is the left: every seam is one
+ * line. Nothing separates them from the title bar, and the bottom row's border is pushed off
+ * the window's edge.
  */
 .pane-card {
   border-color: var(--pane-border);
@@ -242,6 +248,9 @@
 /* The sidebar sliding open or shut. */
 .sidebar-anim {
   transition: width 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sidebar-pad-anim {
+  transition: padding-left 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 /*

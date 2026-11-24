@@ -16,6 +16,13 @@ export function useCustomTitleBar() {
   return !useIsMac();
 }
 
+/**
+ * The title bar's height on macOS, in px (not rem, so text size doesn't move it): the height
+ * of the native toolbar the window has (MacTitleBarHiddenInset), whose middle the traffic
+ * lights sit on.
+ */
+export const MAC_TITLE_BAR_HEIGHT = 52;
+
 /** True on macOS, where the traffic lights sit over the top-left corner. */
 export function useMacTitleBar() {
   return useIsMac();

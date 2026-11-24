@@ -84,6 +84,8 @@ type AppState = {
   /** Starts a new chat with the conversation before a message; returns it. */
   fork: (sessionId: string, messageId: string) => Promise<Session>;
   takeDraft: (sessionId: string) => string | undefined;
+  /** Hands text to a chat's input (an edited queued message), ahead of what's typed there. */
+  putDraft: (sessionId: string, text: string) => void;
 
   // Backend event handlers
   onMessage: (m: Message) => void;
@@ -278,6 +280,11 @@ export const useApp = create<AppState>((set, get) => ({
     await get().refreshTree();
     set({ drafts: { ...get().drafts, [res.session.id]: res.text } });
     return res.session;
+  },
+
+  putDraft: (sessionId, text) => {
+    const pending = get().drafts[sessionId];
+    set({ drafts: { ...get().drafts, [sessionId]: pending ? `${text}\n\n${pending}` : text } });
   },
 
   takeDraft: (sessionId) => {

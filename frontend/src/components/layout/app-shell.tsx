@@ -21,6 +21,7 @@ import {
   onTitleBarDoubleClick,
   useCustomTitleBar,
   useMacTitleBar,
+  MAC_TITLE_BAR_HEIGHT,
 } from "./window-controls";
 
 const WIDTH_KEY = "harness.sidebarWidth";
@@ -101,9 +102,10 @@ export function AppShell() {
         className="relative z-10 -mx-1 h-full w-2 shrink-0 cursor-col-resize"
         style={noDragStyle}
       />
-      <div className="flex h-full min-w-[320px] flex-1 flex-col">
+      <div className="flex h-full min-w-[320px] flex-1 flex-col border-l border-(--pane-border)">
         <TopBar />
-        <div className="min-h-0 flex-1 overflow-hidden border-t border-l border-(--pane-border)">
+        {/* 1px taller than the window, so the bottom windows' bottom border falls off its edge. */}
+        <div className="-mb-px min-h-0 flex-1 overflow-hidden">
           <GroupStack />
         </div>
       </div>
@@ -180,9 +182,12 @@ function TopBar() {
     // Part of the window's title bar: draggable, and padded around OS/window controls.
     <header
       onDoubleClick={onTitleBarDoubleClick}
-      className="flex h-11 shrink-0 items-center gap-1 px-1"
+      // The room left for the traffic lights eases in step with the sidebar's width, so the
+      // header's buttons never pass under them while it opens or closes.
+      className="sidebar-pad-anim flex h-11 shrink-0 items-center gap-1 bg-(--titlebar) px-1"
       style={{
         ...dragStyle,
+        height: isMac ? MAC_TITLE_BAR_HEIGHT : undefined,
         paddingLeft: isMac && !sidebarOpen ? 80 : undefined,
         paddingRight: customControls ? WINDOW_CONTROLS_WIDTH : undefined,
       }}

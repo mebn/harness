@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { dragStyle, onTitleBarDoubleClick, useMacTitleBar } from "@/components/layout/window-controls";
+import { dragStyle, MAC_TITLE_BAR_HEIGHT, onTitleBarDoubleClick, useMacTitleBar } from "@/components/layout/window-controls";
 import { useShortcutLabel } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
@@ -63,7 +63,7 @@ export function ProjectSidebar() {
     // Dropping a dragged tab or window anywhere here makes it a new group.
     <aside data-drop-sidebar className="group/sidebar flex h-full flex-col text-sidebar-foreground">
       {/* On macOS the traffic lights sit here; the strip doubles as the window's drag region. */}
-      {isMac && <div className="h-11 shrink-0" style={{ ...dragStyle, paddingLeft: 80 }} onDoubleClick={onTitleBarDoubleClick} />}
+      {isMac && <div className="h-11 shrink-0" style={{ ...dragStyle, height: MAC_TITLE_BAR_HEIGHT, paddingLeft: 80 }} onDoubleClick={onTitleBarDoubleClick} />}
 
       <nav className="flex shrink-0 flex-col gap-px px-2 pt-2">
         <NavRow icon={SquarePen} label="New group" shortcut="newGroup" onClick={newGroupHere} />

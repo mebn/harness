@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useState, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import Markdown, { type Components } from "react-markdown";
 import { PreviewableImage } from "@/components/common/image-preview";
 import remarkGfm from "remark-gfm";
@@ -8,7 +9,8 @@ import { AgentCall, isAgentPart } from "./agent-call";
 import { MessageActions } from "./message-actions";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCall } from "./tool-call";
-import { segment, ToolGroup } from "./tool-group";
+import { segment, STANDALONE, summarize, ToolGroup } from "./tool-group";
+import { cn } from "@/lib/utils";
 
 const remarkPlugins = [remarkGfm];
 /** Images in replies open in the app's preview rather than the system browser. */
@@ -40,7 +42,51 @@ function PartView({ part }: { part: Part }) {
   }
 }
 
-export const MessageItem = memo(function MessageItem({ message }: { message: Message }) {
+/**
+ * Where a finished reply's answer starts: the trailing run of text, errors and tool calls
+ * the user took part in (plans, questions). Everything before it is the work that led there.
+ */
+function answerStart(parts: Part[]): number {
+  let i = parts.length;
+  while (i > 0) {
+    const p = parts[i - 1];
+    const shown = p.parentId || p.type === "text" || p.type === "error" || (p.type === "tool" && STANDALONE.has(p.toolName ?? ""));
+    if (!shown) break;
+    i--;
+  }
+  return i;
+}
+
+// Finished replies whose work is expanded, by message id; kept while the app runs.
+const workExpanded = new Set<string>();
+
+/** A finished reply's thinking, tool calls and interim text as one line that expands to them. */
+function WorkSection({ id, parts, children }: { id: string; parts: Part[]; children: ReactNode }) {
+  const [open, setOpenState] = useState(() => workExpanded.has(id));
+  const setOpen = (o: boolean) => {
+    if (o) workExpanded.add(id);
+    else workExpanded.delete(id);
+    setOpenState(o);
+  };
+  const tools = parts.filter((p) => p.type === "tool" && !p.parentId);
+  const failed = tools.filter((p) => p.isError).length;
+  return (
+    <div className="mb-2 text-xs">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-accent/60"
+      >
+        <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
+        <span className="min-w-0 shrink truncate font-medium">{tools.length ? summarize(tools) : "Thought"}</span>
+        {failed > 0 && <span className="shrink-0 text-destructive">· {failed} failed</span>}
+      </button>
+      {open && <div className="ml-[13px] border-l pl-3 text-sm">{children}</div>}
+    </div>
+  );
+}
+
+export const MessageItem = memo(function MessageItem({ message, live = false }: { message: Message; live?: boolean }) {
   const parts = message.parts ?? [];
 
   // Shown in the chat only (e.g. the model changed); never part of the conversation.
@@ -80,17 +126,31 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Mes
       <PartView key={p.toolId || i} part={p} />
     );
   // Consecutive tool calls collapse into one line.
-  return (
-    <div className="min-w-0">
-      {segment(parts).map((s) =>
-        "id" in s ? (
-          <ToolGroup key={`group:${s.id}`} id={s.id} parts={s.parts.map((r) => r.part)}>
-            {s.parts.map((r) => view(r.part, r.index))}
-          </ToolGroup>
-        ) : (
-          view(s.part, s.index)
-        ),
-      )}
-    </div>
-  );
+  const segments = segment(parts);
+  const render = (list: typeof segments) =>
+    list.map((s) =>
+      "id" in s ? (
+        <ToolGroup key={`group:${s.id}`} id={s.id} parts={s.parts.map((r) => r.part)}>
+          {s.parts.map((r) => view(r.part, r.index))}
+        </ToolGroup>
+      ) : (
+        view(s.part, s.index)
+      ),
+    );
+
+  // Once the reply is finished, its work folds away behind one line and only the answer shows.
+  const start = live ? 0 : answerStart(parts);
+  const work = parts.slice(0, start);
+  if (work.some((p) => p.type === "thinking" || p.type === "tool")) {
+    const first = (s: (typeof segments)[number]) => ("id" in s ? s.parts[0].index : s.index);
+    return (
+      <div className="min-w-0">
+        <WorkSection id={message.id} parts={work}>
+          {render(segments.filter((s) => first(s) < start))}
+        </WorkSection>
+        {render(segments.filter((s) => first(s) >= start))}
+      </div>
+    );
+  }
+  return <div className="min-w-0">{render(segments)}</div>;
 });

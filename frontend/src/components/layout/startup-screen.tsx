@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RotateCcw, ServerCrash } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { WindowControls, dragStyle, noDragStyle, onTitleBarDoubleClick } from "@/components/layout/window-controls";
+import {
+  MAC_TITLE_BAR_HEIGHT,
+  WindowControls,
+  dragStyle,
+  noDragStyle,
+  onTitleBarDoubleClick,
+  useMacTitleBar,
+} from "@/components/layout/window-controls";
 
 /** Where the window (or, in a browser, the server) says whether the server is reachable. */
 const CONNECTION_PATH = "/harness/connection";
@@ -85,9 +92,14 @@ export function StartupScreen({ state, onRetry }: { state: State; onRetry: () =>
     return () => clearTimeout(t);
   }, []);
 
+  const isMac = useMacTitleBar();
   return (
     <div className="app-backdrop flex h-full flex-col">
-      <div className="h-11 shrink-0" style={dragStyle} onDoubleClick={onTitleBarDoubleClick} />
+      <div
+        className="h-11 shrink-0"
+        style={{ ...dragStyle, height: isMac ? MAC_TITLE_BAR_HEIGHT : undefined }}
+        onDoubleClick={onTitleBarDoubleClick}
+      />
       <WindowControls />
       <div className="flex min-h-0 flex-1 items-center justify-center p-8">
         {state.phase === "connecting" ? (

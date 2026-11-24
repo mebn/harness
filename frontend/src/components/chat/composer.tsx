@@ -10,7 +10,6 @@ import { AttachmentChips } from "./attachment-chips";
 import { LocationPicker } from "./location-picker";
 import { ModelPicker } from "./model-picker";
 import { PermissionPrompt } from "./permission-prompt";
-import { QueueList } from "./queue-list";
 import { SlashMenu, matchCommands, slashQuery } from "./slash-menu";
 import { TaskStrip } from "./task-strip";
 import { UsageIndicator } from "./usage-indicator";
@@ -60,12 +59,13 @@ export function Composer({ session, visible, status, quick, bar, focusKey, onDia
 
   const provider = providers.find((p) => p.id === session.provider) ?? providers[0];
 
-  // Text handed over by a rewind or fork goes into the input.
+  // Text handed over (a rewind, fork or edited queued message) goes into the input, ahead of
+  // anything already typed there.
   useEffect(() => {
     if (draft === undefined) return;
     const t = takeDraft(session.id);
     if (t !== undefined) {
-      setText(t);
+      setText((cur) => (cur.trim() ? `${t}\n\n${cur}` : t));
       ref.current?.focus();
     }
   }, [draft, session.id, takeDraft]);
@@ -176,14 +176,6 @@ export function Composer({ session, visible, status, quick, bar, focusKey, onDia
           onPick={(c) => pickCommand(c.name, c.argumentHint)}
         />
       )}
-      <QueueList
-        sessionId={session.id}
-        onEdit={(t) => {
-          setText((cur) => (cur.trim() ? `${t}\n\n${cur}` : t));
-          ref.current?.focus();
-        }}
-        onError={setSendError}
-      />
       <div
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;

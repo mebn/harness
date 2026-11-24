@@ -54,7 +54,7 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
             <span className="text-lg font-medium text-foreground/70">{project?.name}</span>
           </div>
         ) : (
-          <MessageList messages={shown} running={running} />
+          <MessageList messages={shown} running={running} sessionId={session.id} />
         )}
         <Composer
           session={session}

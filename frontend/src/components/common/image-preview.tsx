@@ -1,6 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+/**
+ * Where previews open: the whole window by default, or an element (the quick chat's card,
+ * whose window is a larger transparent stage) they cover and stay inside.
+ */
+export const PreviewContainer = createContext<HTMLElement | null>(null);
 
 /**
  * An image shown large over the app. Images stay in the app: opening their URL would go to the
@@ -17,15 +24,22 @@ export function ImagePreview({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const container = useContext(PreviewContainer);
+  // Inside a container the preview takes its rounded shape; otherwise it fills the window.
+  const place = container ? "absolute rounded-[inherit]" : "fixed";
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/75 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+      <DialogPrimitive.Portal container={container ?? undefined}>
+        <DialogPrimitive.Overlay className={cn(place, "inset-0 z-50 bg-black/75 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0")} />
         <DialogPrimitive.Content
           aria-describedby={undefined}
           // Clicking anywhere but the image closes it.
           onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-10 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className={cn(
+            place,
+            container ? "p-6" : "p-10",
+            "inset-0 z-50 flex items-center justify-center outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          )}
         >
           <DialogPrimitive.Title className="sr-only">{alt || "Image"}</DialogPrimitive.Title>
           {src && (

@@ -3,6 +3,7 @@ import { AppWindow, ChevronDown, Folder, SquarePen } from "lucide-react";
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { settleStale } from "@/components/chat/chat-view";
+import { PreviewContainer } from "@/components/common/image-preview";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { useStartup } from "@/components/layout/startup-screen";
 import { ActivityIndicator } from "@/components/sidebar/activity-indicator";
@@ -185,6 +186,7 @@ function QuickChat() {
   };
 
   const shown = useMemo(() => settleStale(messages, running), [messages, running]);
+  const [card, setCard] = useState<HTMLElement | null>(null);
   const expanded = shown.length > 0 || running || hasPending;
 
   if (!session) {
@@ -207,18 +209,21 @@ function QuickChat() {
 
   return (
     <Stage>
-      <section className={cn("quick-card w-full", expanded && "expanded")}>
-        <div className="quick-chat">
-          <MessageList messages={shown} running={running} />
-        </div>
-        <Composer
-          session={session}
-          visible
-          quick
-          focusKey={shownCount}
-          onDialog={dialogOpen}
-          bar={<QuickBar session={session} onSelect={select} onNew={(p) => void newChat(p)} />}
-        />
+      {/* Image previews open over the card rather than the whole (transparent) window. */}
+      <section ref={setCard} className={cn("quick-card w-full", expanded && "expanded")}>
+        <PreviewContainer.Provider value={card}>
+          <div className="quick-chat">
+            <MessageList messages={shown} running={running} sessionId={session.id} />
+          </div>
+          <Composer
+            session={session}
+            visible
+            quick
+            focusKey={shownCount}
+            onDialog={dialogOpen}
+            bar={<QuickBar session={session} onSelect={select} onNew={(p) => void newChat(p)} />}
+          />
+        </PreviewContainer.Provider>
       </section>
     </Stage>
   );

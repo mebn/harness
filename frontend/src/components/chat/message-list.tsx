@@ -1,17 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, Loader2 } from "lucide-react";
 import type { Message } from "@/lib/backend";
+import { useApp } from "@/stores/app-store";
 import { MessageItem } from "./message-item";
+import { QueueList } from "./queue-list";
 
 const STICK_THRESHOLD = 80;
 
-type Props = { messages: Message[]; running: boolean };
+type Props = { messages: Message[]; running: boolean; sessionId: string };
 
-export function MessageList({ messages, running }: Props) {
+export function MessageList({ messages, running, sessionId }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // Mirrors `stick` for rendering: the scroll-to-end button shows while scrolled up.
   const [atBottom, setAtBottom] = useState(true);
+  const queued = useApp((s) => s.queues[sessionId]);
 
   // Follow new output only while the user is at the bottom.
   const onScroll = () => {
@@ -24,7 +27,7 @@ export function MessageList({ messages, running }: Props) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, queued]);
 
   // Always jump to the bottom when a new turn starts.
   useEffect(() => {
@@ -46,10 +49,11 @@ export function MessageList({ messages, running }: Props) {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]">
         <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
-          {messages.map((m) => (
-            <MessageItem key={m.id} message={m} />
+          {messages.map((m, i) => (
+            <MessageItem key={m.id} message={m} live={running && i === messages.length - 1} />
           ))}
           {running && <TurnTimer since={lastUserMessageAt(messages)} />}
+          <QueueList sessionId={sessionId} />
         </div>
       </div>
       {!atBottom && (

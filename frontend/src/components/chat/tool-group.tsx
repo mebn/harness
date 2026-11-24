@@ -6,7 +6,7 @@ import { agentLabel, isAgentPart } from "./agent-call";
 import { displayName } from "./tool-call";
 
 /** Tool calls that stay on their own: the user took part in them (plans, questions). */
-const STANDALONE = new Set(["ExitPlanMode", "AskUserQuestion"]);
+export const STANDALONE = new Set(["ExitPlanMode", "AskUserQuestion"]);
 
 export type Segment = { part: Part; index: number } | { id: string; parts: { part: Part; index: number }[] };
 
@@ -113,7 +113,7 @@ const KINDS: Record<string, Kind> = {
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 /** "Read 3 files, edited 2 files, ran 1 command", in the order the kinds first appear. */
-function summarize(tools: Part[]): string {
+export function summarize(tools: Part[]): string {
   const byKind = new Map<Kind, Set<string>>();
   tools.forEach((p, i) => {
     const kind = KINDS[p.toolName ?? ""] ?? "other";
