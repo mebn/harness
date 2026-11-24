@@ -75,17 +75,11 @@ func main() {
 		Frameless: runtime.GOOS != "darwin",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 40,
-			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		// The window is see-through: the OS blurs whatever is behind it (Acrylic on Windows,
-		// vibrancy on macOS) and the UI paints only a light tint over that.
-		BackgroundType:   application.BackgroundTypeTranslucent,
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-		Windows: application.WindowsWindow{
-			BackdropType: application.Acrylic,
-		},
-		URL: "/",
+		// Solid, matching the light theme's backdrop until the page paints its own.
+		BackgroundColour: application.NewRGB(238, 238, 238),
+		URL:              "/",
 	})
 
 	go bridge.RelayEvents(ctx, func(name string, data any) { app.Event.Emit(name, data) })

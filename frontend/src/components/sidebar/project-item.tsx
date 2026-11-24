@@ -23,7 +23,19 @@ import { HoverSwap } from "./hover-swap";
 import { ImportChatDialog } from "./import-chat-dialog";
 import { GroupItem } from "./group-item";
 
-export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group[] }) {
+export function ProjectItem({
+  node,
+  groups,
+  dragging,
+  dropEdge,
+}: {
+  node: ProjectTree;
+  groups: Group[];
+  /** Being dragged to a new position. */
+  dragging?: boolean;
+  /** A dragged workspace will land on this side of this one. */
+  dropEdge?: "before" | "after";
+}) {
   const { project } = node;
   const sessions = node.sessions ?? [];
   const [editing, setEditing] = useState(false);
@@ -44,118 +56,129 @@ export function ProjectItem({ node, groups }: { node: ProjectTree; groups: Group
   const state = useApp((s) => strongest(sessions.map((x) => sessionState(x, !!s.running[x.id], s.seen[x.id]))));
 
   return (
-    <Collapsible open={project.expanded}>
-      <div
-        role="button"
-        onClick={() => void toggle(project.id)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenuOpen(true);
-        }}
-        title={project.path}
-        className="group flex h-7 cursor-default items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:text-sidebar-foreground"
-      >
-        {/* Expanded, each group shows its own activity; collapsed, the header carries it. */}
-        {!project.expanded && state !== "idle" && <ActivityIndicator state={state} />}
-        {editing ? (
-          <InlineEdit
-            value={project.name}
-            onSubmit={(v) => {
-              setEditing(false);
-              void rename(project.id, v);
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-1">
-            <span className={cn("truncate text-xs font-semibold", !project.expanded && STATE_TEXT[state])}>{project.name}</span>
-            <ChevronDown
-              className={cn(
-                "size-3 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100",
-                !project.expanded && "-rotate-90 opacity-100",
-              )}
-            />
-          </span>
-        )}
-        {project.env === "wsl" && (
-          <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">WSL</span>
-        )}
-
-        <HoverSwap idle={timeAgo(projectLastUsed(node), now)}>
-          <button
-            aria-label="New group"
-            title={`New group (${shortcutLabel("newGroup")})`}
-            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              void newGroup(project.id);
-            }}
-          >
-            <Plus className="size-3.5" />
-          </button>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <button aria-label="Project options" className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                <MoreHorizontal className="size-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onSelect={() => setEditing(true)}>
-                Rename
-              </DropdownMenuItem>
-              {elevatable && (
-                <DropdownMenuCheckboxItem
-                  checked={project.adminTerminals}
-                  onCheckedChange={(v) => void setAdminTerminals(project.id, v === true)}
-                >
-                  Terminals as admin
-                </DropdownMenuCheckboxItem>
-              )}
-              {project.env !== "wsl" && (
-                <DropdownMenuItem onSelect={() => setImporting(true)}>Import Claude Code chat…</DropdownMenuItem>
-              )}
-              <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
-                Remove
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </HoverSwap>
-      </div>
-      {/* Outside the row, so clicks in the dialog don't toggle the folder. */}
-      <ImportChatDialog project={project} open={importing} onOpenChange={setImporting} />
-
-      <CollapsibleContent>
+    <div data-drop-project={project.id} className={cn("relative", dragging && "opacity-40")}>
+      {dropEdge && (
         <div
-          ref={reorder.listRef}
-          onPointerDown={reorder.onPointerDown}
-          className="flex flex-col gap-0.5 pb-1"
-        >
-          {groups.map((g) => (
-            <GroupItem
-              key={g.id}
-              group={g}
-              dragging={reorder.dragId === g.id}
-              dropEdge={reorder.drop?.id === g.id ? reorder.drop.edge : undefined}
-            />
-          ))}
-          {groups.length === 0 && !dropHere && (
-            <button
-              onClick={() => void newGroup(project.id)}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-sidebar-border px-2 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              New group
-            </button>
+          className={cn(
+            "pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-ring",
+            dropEdge === "before" ? "-top-[5px]" : "-bottom-[5px]",
           )}
-        </div>
-      </CollapsibleContent>
-      {dropHere && (
-        <div className="pb-1">
-          <div className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
-            New group
-          </div>
-        </div>
+        />
       )}
-    </Collapsible>
+      <Collapsible open={project.expanded}>
+        <div
+          role="button"
+          data-project-header
+          onClick={() => void toggle(project.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuOpen(true);
+          }}
+          title={project.path}
+          className="group flex h-7 cursor-default items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:text-sidebar-foreground"
+        >
+          {/* Expanded, each group shows its own activity; collapsed, the header carries it. */}
+          {!project.expanded && state !== "idle" && <ActivityIndicator state={state} />}
+          {editing ? (
+            <InlineEdit
+              value={project.name}
+              onSubmit={(v) => {
+                setEditing(false);
+                void rename(project.id, v);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              <span className={cn("truncate text-xs font-semibold", !project.expanded && STATE_TEXT[state])}>{project.name}</span>
+              <ChevronDown
+                className={cn(
+                  "size-3 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100",
+                  !project.expanded && "-rotate-90 opacity-100",
+                )}
+              />
+            </span>
+          )}
+          {project.env === "wsl" && (
+            <span className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">WSL</span>
+          )}
+  
+          <HoverSwap idle={timeAgo(projectLastUsed(node), now)}>
+            <button
+              aria-label="New group"
+              title={`New group (${shortcutLabel("newGroup")})`}
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                void newGroup(project.id);
+              }}
+            >
+              <Plus className="size-3.5" />
+            </button>
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <button aria-label="Project options" className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                  <MoreHorizontal className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onSelect={() => setEditing(true)}>
+                  Rename
+                </DropdownMenuItem>
+                {elevatable && (
+                  <DropdownMenuCheckboxItem
+                    checked={project.adminTerminals}
+                    onCheckedChange={(v) => void setAdminTerminals(project.id, v === true)}
+                  >
+                    Terminals as admin
+                  </DropdownMenuCheckboxItem>
+                )}
+                {project.env !== "wsl" && (
+                  <DropdownMenuItem onSelect={() => setImporting(true)}>Import Claude Code chat…</DropdownMenuItem>
+                )}
+                <DropdownMenuItem variant="destructive" onSelect={() => void remove(project.id)}>
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </HoverSwap>
+        </div>
+        {/* Outside the row, so clicks in the dialog don't toggle the folder. */}
+        <ImportChatDialog project={project} open={importing} onOpenChange={setImporting} />
+  
+        <CollapsibleContent>
+          <div
+            ref={reorder.listRef}
+            onPointerDown={reorder.onPointerDown}
+            className="flex flex-col gap-0.5 pb-1"
+          >
+            {groups.map((g) => (
+              <GroupItem
+                key={g.id}
+                group={g}
+                dragging={reorder.dragId === g.id}
+                dropEdge={reorder.drop?.id === g.id ? reorder.drop.edge : undefined}
+              />
+            ))}
+            {groups.length === 0 && !dropHere && (
+              <button
+                onClick={() => void newGroup(project.id)}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-sidebar-border px-2 text-xs text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                New group
+              </button>
+            )}
+          </div>
+        </CollapsibleContent>
+        {dropHere && (
+          <div className="pb-1">
+            <div className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-ring/70 bg-ring/10 px-1.5 text-xs text-foreground animate-in fade-in-0 slide-in-from-top-1 duration-150">
+              New group
+            </div>
+          </div>
+        )}
+      </Collapsible>
+    </div>
   );
 }
 

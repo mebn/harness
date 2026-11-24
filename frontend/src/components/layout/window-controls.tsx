@@ -6,14 +6,19 @@ import { useApp } from "@/stores/app-store";
 /** Width reserved at the top-right for the controls (Windows/Linux only). */
 export const WINDOW_CONTROLS_WIDTH = 138;
 
+/** The OS, from the server once connected and from the browser before that (startup screen). */
+function useIsMac() {
+  return useApp((s) => (s.system.os ? s.system.os === "darwin" : /Mac/i.test(navigator.userAgent)));
+}
+
 /** True when the app draws its own min/max/close buttons (frameless window). */
 export function useCustomTitleBar() {
-  return useApp((s) => s.system.os !== "darwin");
+  return !useIsMac();
 }
 
 /** True on macOS, where the traffic lights sit over the top-left corner. */
 export function useMacTitleBar() {
-  return useApp((s) => s.system.os === "darwin");
+  return useIsMac();
 }
 
 export const dragStyle = { "--wails-draggable": "drag" } as React.CSSProperties;

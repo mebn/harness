@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/aymanbagabas/go-pty"
@@ -62,7 +63,7 @@ func (t *TerminalService) Start(projectID, worktree string, admin bool, cols, ro
 	if env.Normalize() == platform.EnvNative {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = terminalEnv()
 	if err := cmd.Start(); err != nil {
 		p.Close()
 		return "", err
@@ -142,4 +143,19 @@ func (t *TerminalService) ServiceShutdown() error {
 		t.Close(id)
 	}
 	return nil
+}
+
+// terminalEnv is the server's environment adjusted for an interactive xterm.js terminal.
+// The server inherits whatever launched it, which may be a tool that turns colours off
+// (NO_COLOR) or sets TERM for something else, and every shell would inherit that too.
+func terminalEnv() []string {
+	drop := map[string]bool{"NO_COLOR": true, "TERM": true, "COLORTERM": true}
+	env := make([]string, 0, len(os.Environ())+2)
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if !drop[strings.ToUpper(name)] {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "TERM=xterm-256color", "COLORTERM=truecolor")
 }

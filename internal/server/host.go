@@ -95,6 +95,11 @@ func (h *Host) Middleware(next http.Handler) http.Handler {
 		}
 
 		switch r.URL.Path {
+		case ConnectionPath:
+			// A browser talks to the server directly, so it is connected by definition.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(Connection{Connected: true})
+			return
 		case "/api/status":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(h.status())

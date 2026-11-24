@@ -55,7 +55,10 @@ func NewBridge(c *server.Client) *Bridge {
 		},
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			c.Invalidate(r.Context().Value(ctxKey{}).(server.Info))
+			// A request the page gave up on says nothing about the server.
+			if r.Context().Err() == nil {
+				c.Invalidate(r.Context().Value(ctxKey{}).(server.Info))
+			}
 			http.Error(w, "Harness server is not reachable: "+err.Error(), http.StatusBadGateway)
 		},
 	}
@@ -65,6 +68,10 @@ func NewBridge(c *server.Client) *Bridge {
 // Middleware routes server-bound requests through the proxy and leaves the rest to Wails.
 func (b *Bridge) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == server.ConnectionPath {
+			b.serveConnection(w, r)
+			return
+		}
 		if !b.forServer(r) {
 			next.ServeHTTP(w, r)
 			return
@@ -76,6 +83,18 @@ func (b *Bridge) Middleware(next http.Handler) http.Handler {
 		}
 		b.proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, info)))
 	})
+}
+
+// serveConnection connects to the server (starting it if needed) and reports how that went,
+// so the UI can wait for it, or show why it failed, before it loads anything.
+func (b *Bridge) serveConnection(w http.ResponseWriter, r *http.Request) {
+	res := server.Connection{Connected: true}
+	if _, err := b.client.Ensure(r.Context()); err != nil {
+		res = server.Connection{Error: err.Error(), LogPath: b.client.LogPath()}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(res)
 }
 
 // forServer decides whether a request goes to the server. It may buffer and restore the body.

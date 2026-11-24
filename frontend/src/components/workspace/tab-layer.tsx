@@ -8,8 +8,7 @@ import { sizeKind, tabsOf, type ContentKind, type Tab } from "@/lib/layout-tree"
 import { KindPicker } from "./kind-picker";
 import { cn } from "@/lib/utils";
 import { useGroups, type Group } from "@/stores/group-store";
-import { FONT_META, fontSize } from "@/stores/settings-store";
-import { useSettings } from "@/stores/settings-store";
+import { FONT_META, fontSize, uiScale, useSettings } from "@/stores/settings-store";
 import { useTabLayer } from "@/stores/tab-layer-store";
 
 /**
@@ -21,6 +20,7 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
   const animate = useTabLayer((s) => s.animate);
   const setHovered = useTabLayer((s) => s.setHovered);
   const fontSizes = useSettings((s) => s.fontSizes);
+  const ui = useSettings((s) => uiScale(s.uiFontSize));
   // Once started, a tab stays mounted even if its new group hasn't placed it yet.
   const started = useRef(new Set<string>());
 
@@ -56,6 +56,7 @@ export function TabLayer({ groups, activeId }: { groups: Group[]; activeId: stri
                   visible={shown}
                   focused={shown && group.focused === place?.paneId}
                   size={sizeKind(tab.kind) ? fontSize(sizeKind(tab.kind)!, fontSizes) : 0}
+                  uiScale={ui}
                 />
               )}
             </div>
@@ -75,6 +76,7 @@ const TabContent = memo(function TabContent({
   visible,
   focused,
   size,
+  uiScale,
 }: {
   tab: Tab;
   groupId: string;
@@ -86,6 +88,8 @@ const TabContent = memo(function TabContent({
   focused: boolean;
   /** Text size for this kind of tab (px; percent for the browser). */
   size: number;
+  /** The app UI's scale. Tab content is rem-sized too, so it is divided back out to keep the two independent. */
+  uiScale: number;
 }) {
   // A new tab shows the numbered choices until one is picked; it then becomes that kind in place.
   if (tab.kind === "new") {
@@ -105,7 +109,7 @@ const TabContent = memo(function TabContent({
       />
     );
   return (
-    <div className="h-full w-full" style={{ zoom: size / FONT_META[sizeKind(tab.kind)!].def }}>
+    <div className="h-full w-full" style={{ zoom: size / FONT_META[sizeKind(tab.kind)!].base / uiScale }}>
       <ScaledContent tab={tab} groupId={groupId} projectId={projectId} worktree={worktree} visible={visible} />
     </div>
   );

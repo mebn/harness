@@ -26,7 +26,7 @@
   --ring: oklch(0.708 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  /* The sidebar sits on the backdrop, so its highlights are translucent. */
+  /* Sidebar highlights are a tint over the backdrop. */
   --sidebar-accent: oklch(1 0 0 / 55%);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0 0 0 / 8%);
@@ -110,9 +110,10 @@
   #root {
     @apply h-full overflow-hidden;
   }
-  /* Transparent; .app-backdrop paints the solid background. */
+  /* The window is opaque: the page paints the backdrop colour from the first frame. */
   body {
-    @apply bg-transparent text-foreground text-sm antialiased select-none;
+    @apply text-foreground text-sm antialiased select-none;
+    background: var(--backdrop);
   }
   ::-webkit-scrollbar {
     width: 8px;

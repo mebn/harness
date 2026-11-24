@@ -26,7 +26,7 @@ import {
 } from "@/lib/layout-tree";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
-import { FONT_META, fontSize, useSettings } from "@/stores/settings-store";
+import { FONT_META, UI_FONT_META, fontSize, useSettings } from "@/stores/settings-store";
 import { useTheme, type ThemePref } from "@/stores/theme-store";
 
 type Category = { id: string; label: string; icon: LucideIcon; description: string; render: () => ReactNode };
@@ -36,15 +36,8 @@ const CATEGORIES: Category[] = [
     id: "appearance",
     label: "Appearance",
     icon: Palette,
-    description: "How Harness looks. The window is translucent and picks up what is behind it.",
+    description: "Theme and text size.",
     render: () => <Appearance />,
-  },
-  {
-    id: "text",
-    label: "Text size",
-    icon: Type,
-    description: `Text size for each kind of tab. ${isMac ? "⌘" : "Ctrl"} + / − / 0 changes it for the tab you are in.`,
-    render: () => <TextSizes />,
   },
   {
     id: "windows",
@@ -124,9 +117,12 @@ const THEMES: { id: ThemePref; label: string; icon: LucideIcon }[] = [
 
 function Appearance() {
   return (
-    <Row label="Theme" hint="System follows your OS setting.">
-      <ThemeToggle />
-    </Row>
+    <div className="flex flex-col gap-6">
+      <Row label="Theme" hint="System follows your OS setting.">
+        <ThemeToggle />
+      </Row>
+      <TextSizes />
+    </div>
   );
 }
 
@@ -172,64 +168,125 @@ function TextSizes() {
   const sizes = useSettings((s) => s.fontSizes);
   const setFontSize = useSettings((s) => s.setFontSize);
   const reset = useSettings((s) => s.resetFontSize);
-  const anyChanged = Object.keys(sizes).length > 0;
+  const uiSize = useSettings((s) => s.uiFontSize);
+  const setUiSize = useSettings((s) => s.setUiFontSize);
+  const anyChanged = Object.keys(sizes).length > 0 || uiSize !== UI_FONT_META.def;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" disabled={!anyChanged} onClick={() => reset()}>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <div className="text-sm">Text size</div>
+          <div className="text-xs text-muted-foreground">
+            {isMac ? "⌘" : "Ctrl"} + / − / 0 changes it for the tab you are in.
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!anyChanged}
+          onClick={() => {
+            reset();
+            setUiSize(UI_FONT_META.def);
+          }}
+        >
           <RotateCcw /> Reset all
         </Button>
       </div>
       <div className="overflow-hidden rounded-lg border">
+        <SizeRow
+          icon={<Type className="size-4 text-muted-foreground" />}
+          label="App interface"
+          hint="Sidebar, tab bars, menus and dialogs"
+          meta={UI_FONT_META}
+          value={uiSize}
+          changed={uiSize !== UI_FONT_META.def}
+          onChange={setUiSize}
+          onReset={() => setUiSize(UI_FONT_META.def)}
+        />
         {TAB_KINDS.map((kind, i) => {
           const meta = FONT_META[kind];
-          const value = fontSize(kind, sizes);
-          const changed = sizes[kind] !== undefined;
           return (
-            <div key={kind} className={cn("flex items-center gap-3 px-3 py-2", i > 0 && "border-t", i % 2 === 1 && "bg-muted/70 dark:bg-muted/50")}>
-              <TabIcon kind={kind} className="size-4 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="text-sm">{KIND_META[kind].label}</div>
-                <div className="text-xs text-muted-foreground">
-                  {kind === "browser" ? "Page zoom" : "Font size"} · default {meta.def}
-                  {meta.unit}
-                </div>
-              </div>
-              <div className="flex items-center rounded-md border bg-background/60">
-                <button
-                  aria-label={`Smaller ${KIND_META[kind].label} text`}
-                  disabled={value <= meta.min}
-                  onClick={() => setFontSize(kind, value - meta.step)}
-                  className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
-                >
-                  <Minus className="size-3.5" />
-                </button>
-                <span className={cn("w-14 text-center text-sm tabular-nums", changed && "font-semibold")}>
-                  {value}
-                  {meta.unit}
-                </span>
-                <button
-                  aria-label={`Larger ${KIND_META[kind].label} text`}
-                  disabled={value >= meta.max}
-                  onClick={() => setFontSize(kind, value + meta.step)}
-                  className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-              <button
-                aria-label={`Reset ${KIND_META[kind].label} text size`}
-                title="Reset to default"
-                onClick={() => reset(kind)}
-                className={cn("rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground", !changed && "invisible")}
-              >
-                <RotateCcw className="size-3.5" />
-              </button>
-            </div>
+            <SizeRow
+              key={kind}
+              striped={i % 2 === 0}
+              icon={<TabIcon kind={kind} className="size-4 text-muted-foreground" />}
+              label={KIND_META[kind].label}
+              hint={kind === "browser" ? "Page zoom" : "Font size"}
+              meta={meta}
+              value={fontSize(kind, sizes)}
+              changed={sizes[kind] !== undefined}
+              onChange={(v) => setFontSize(kind, v)}
+              onReset={() => reset(kind)}
+            />
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function SizeRow({
+  icon,
+  label,
+  hint,
+  meta,
+  value,
+  changed,
+  striped,
+  onChange,
+  onReset,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint: string;
+  meta: { def: number; min: number; max: number; step: number; unit: string };
+  value: number;
+  changed: boolean;
+  striped?: boolean;
+  onChange: (value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className={cn("flex items-center gap-3 border-t px-3 py-2 first:border-t-0", striped && "bg-muted/70 dark:bg-muted/50")}>
+      {icon}
+      <div className="flex-1">
+        <div className="text-sm">{label}</div>
+        <div className="text-xs text-muted-foreground">
+          {hint} · default {meta.def}
+          {meta.unit}
+        </div>
+      </div>
+      <div className="flex items-center rounded-md border bg-background/60">
+        <button
+          aria-label={`Smaller ${label} text`}
+          disabled={value <= meta.min}
+          onClick={() => onChange(value - meta.step)}
+          className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+        >
+          <Minus className="size-3.5" />
+        </button>
+        <span className={cn("w-14 text-center text-sm tabular-nums", changed && "font-semibold")}>
+          {value}
+          {meta.unit}
+        </span>
+        <button
+          aria-label={`Larger ${label} text`}
+          disabled={value >= meta.max}
+          onClick={() => onChange(value + meta.step)}
+          className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </div>
+      <button
+        aria-label={`Reset ${label} text size`}
+        title="Reset to default"
+        onClick={onReset}
+        className={cn("rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground", !changed && "invisible")}
+      >
+        <RotateCcw className="size-3.5" />
+      </button>
     </div>
   );
 }

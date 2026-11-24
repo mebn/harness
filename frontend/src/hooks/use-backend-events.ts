@@ -18,7 +18,7 @@ export function useBackendEvents() {
       Events.On("chat:reload", (e) => void onReload(e.data.sessionId)),
       Events.On("usage:updated", (e) => useUsage.getState().set(e.data)),
       // Events were missed while disconnected (or the server restarted): reload everything.
-      Events.On(EVENT_SERVER_RECONNECTED, () => void init()),
+      Events.On(EVENT_SERVER_RECONNECTED, () => init().catch((e) => console.error("reload after reconnect:", e))),
     ];
     return () => offs.forEach((off) => off());
   }, []);

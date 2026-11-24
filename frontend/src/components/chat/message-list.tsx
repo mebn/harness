@@ -58,7 +58,7 @@ export function MessageList({ messages, running }: Props) {
           onClick={scrollToEnd}
           aria-label="Scroll to end"
           title="Scroll to end"
-          className="absolute bottom-3 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border bg-background/90 text-muted-foreground shadow-md backdrop-blur-sm animate-in fade-in-0 zoom-in-90 hover:text-foreground"
+          className="absolute bottom-3 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-md animate-in fade-in-0 zoom-in-90 hover:text-foreground"
         >
           <ArrowDown className="size-4" />
         </button>

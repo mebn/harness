@@ -33,6 +33,18 @@ type Status struct {
 	Terminals  int   `json:"terminals"`  // open shells
 }
 
+// ConnectionPath is where the UI asks whether the server is reachable before loading.
+// The desktop window answers it itself (starting the server if needed); the server answers
+// it for browsers.
+const ConnectionPath = "/harness/connection"
+
+// Connection answers ConnectionPath.
+type Connection struct {
+	Connected bool   `json:"connected"`
+	Error     string `json:"error,omitempty"`
+	LogPath   string `json:"logPath,omitempty"`
+}
+
 func infoPath(dataDir string) string { return filepath.Join(dataDir, "server.json") }
 
 // ReadInfo loads the info file written by a running server.

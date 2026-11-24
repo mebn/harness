@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,7 +82,8 @@ func (c *Client) Ensure(ctx context.Context) (Info, error) {
 		}
 	}
 
-	if err := c.spawn(); err != nil {
+	exited, err := c.spawn()
+	if err != nil {
 		return Info{}, err
 	}
 	deadline := time.Now().Add(startTimeout)
@@ -89,6 +91,11 @@ func (c *Client) Ensure(ctx context.Context) (Info, error) {
 		select {
 		case <-ctx.Done():
 			return Info{}, ctx.Err()
+		case code := <-exited:
+			exited = nil // it's gone; keep waiting only if another server holds the lock
+			if code != 0 {
+				return Info{}, fmt.Errorf("harness server exited during startup (code %d)%s", code, c.logTail())
+			}
 		case <-time.After(pollInterval):
 		}
 		info, err := ReadInfo(c.dataDir)
@@ -100,7 +107,26 @@ func (c *Client) Ensure(ctx context.Context) (Info, error) {
 			return info, nil
 		}
 	}
-	return Info{}, fmt.Errorf("harness server did not start; see %s", filepath.Join(c.dataDir, "server.log"))
+	return Info{}, fmt.Errorf("harness server did not start within %s%s", startTimeout, c.logTail())
+}
+
+// LogPath is where the server writes its output.
+func (c *Client) LogPath() string { return filepath.Join(c.dataDir, "server.log") }
+
+// logTail is the end of the server log, to show why it didn't start.
+func (c *Client) logTail() string {
+	data, err := os.ReadFile(c.LogPath())
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	if len(data) > 1500 {
+		data = data[len(data)-1500:]
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) > 8 {
+		lines = lines[len(lines)-8:]
+	}
+	return "\n\n" + strings.Join(lines, "\n")
 }
 
 // Ping reports whether a server answers at info.
@@ -158,44 +184,67 @@ func (c *Client) waitGone(ctx context.Context, info Info) {
 }
 
 // spawn starts the server detached, so it outlives this process. Output goes to server.log.
-func (c *Client) spawn() error {
+// The channel receives its exit code if it exits while this process is still running.
+func (c *Client) spawn() (<-chan int, error) {
 	if _, err := os.Stat(c.exe); err != nil {
-		return fmt.Errorf("harness server binary not found: %w", err)
+		return nil, fmt.Errorf("harness server binary not found: %w", err)
 	}
 	if err := os.MkdirAll(c.dataDir, 0o700); err != nil {
-		return err
+		return nil, err
 	}
-	logPath := filepath.Join(c.dataDir, "server.log")
+	logPath := c.LogPath()
 	if st, err := os.Stat(logPath); err == nil && st.Size() > maxLogSize {
 		_ = os.Remove(logPath)
 	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer logFile.Close()
 
-	return StartDetached(c.exe, logFile)
+	cmd, err := StartDetached(c.exe, logFile, serverEnv())
+	if err != nil {
+		return nil, err
+	}
+	exited := make(chan int, 1)
+	go func() {
+		_ = cmd.Wait()
+		exited <- cmd.ProcessState.ExitCode()
+	}()
+	return exited, nil
+}
+
+// serverEnv is this process's environment minus what only makes sense for a window.
+// In `wails3 dev` the window gets FRONTEND_DEVSERVER_URL; a dev-built server that inherits
+// it waits for Vite at startup and exits when it isn't there (and would outlive it anyway).
+func serverEnv() []string {
+	env := os.Environ()
+	out := env[:0:0]
+	for _, kv := range env {
+		if !strings.HasPrefix(strings.ToUpper(kv), "FRONTEND_DEVSERVER_URL=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // StartDetached starts exe so it outlives this process (no console, own process group,
 // outside the parent's job object when allowed). out receives its output; nil discards it.
-func StartDetached(exe string, out *os.File) error {
-	start := func(breakaway bool) error {
+// env nil means this process's environment. The caller may Wait on the returned command.
+func StartDetached(exe string, out *os.File, env []string) (*exec.Cmd, error) {
+	start := func(breakaway bool) (*exec.Cmd, error) {
 		cmd := exec.Command(exe)
 		cmd.Dir = filepath.Dir(exe)
+		cmd.Env = env
 		if out != nil {
 			cmd.Stdout, cmd.Stderr = out, out
 		}
 		detach(cmd, breakaway)
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		return cmd.Process.Release()
+		return cmd, cmd.Start()
 	}
 	// Breaking away from a job object (used by some launchers) can be denied; then start inside it.
-	if err := start(true); err != nil {
-		return start(false)
+	if cmd, err := start(true); err == nil {
+		return cmd, nil
 	}
-	return nil
+	return start(false)
 }

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
+import { StartupScreen, useStartup } from "@/components/layout/startup-screen";
 import { WindowControls } from "@/components/layout/window-controls";
 import { DragOverlay } from "@/components/workspace/drag-overlay";
 import { SearchDialog } from "@/components/search/search-dialog";
@@ -19,10 +20,7 @@ export default function App() {
   const settingsCategory = useLayout((s) => s.settingsCategory);
   useBackendEvents();
   useHotkeys();
-
-  useEffect(() => {
-    void init();
-  }, [init]);
+  const startup = useStartup(init);
 
   // Dropping a file outside the chat box must not navigate the webview to it.
   useEffect(() => {
@@ -35,7 +33,7 @@ export default function App() {
     };
   }, []);
 
-  if (!ready) return null;
+  if (!ready) return <StartupScreen state={startup.state} onRetry={startup.retry} />;
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -57,7 +55,7 @@ function Notice() {
   return (
     <div
       role="status"
-      className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border bg-popover/95 px-4 py-1.5 text-xs text-popover-foreground shadow-lg backdrop-blur-xl animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
+      className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border bg-popover px-4 py-1.5 text-xs text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
     >
       {notice}
     </div>

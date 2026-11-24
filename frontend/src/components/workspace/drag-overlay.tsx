@@ -14,7 +14,7 @@ export function DragOverlay() {
   return (
     <div data-drag-overlay className="fixed inset-0 z-[60] cursor-grabbing select-none">
       <div
-        className="pointer-events-none absolute flex max-w-60 items-center gap-1.5 rounded-lg border bg-popover/95 px-2.5 py-1.5 text-[13px] font-medium text-popover-foreground shadow-lg backdrop-blur-xl transition-opacity"
+        className="pointer-events-none absolute flex max-w-60 items-center gap-1.5 rounded-lg border bg-popover px-2.5 py-1.5 text-[13px] font-medium text-popover-foreground shadow-lg transition-opacity"
         style={{ left: pointer.x + 12, top: pointer.y + 10, opacity: nowhere ? 0.6 : 1 }}
       >
         {drag.icon && <TabIcon kind={drag.icon} className="size-3.5 shrink-0 opacity-80" />}

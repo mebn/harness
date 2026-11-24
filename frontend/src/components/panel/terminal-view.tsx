@@ -36,7 +36,7 @@ export function TerminalView({
   worktree = "",
   admin = false,
   active,
-  fontSize = 12,
+  fontSize = 13,
 }: {
   projectId: string;
   /** Where the shell starts; a running shell stays put if its group moves to another worktree. */

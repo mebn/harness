@@ -8,24 +8,24 @@ import { KIND_META, TabIcon } from "./tab-meta";
  */
 export function KindPicker({ focused, onPick }: { focused: boolean; onPick: (kind: ContentKind) => void }) {
   return (
-    <div className="@container flex h-full overflow-auto">
-      <div className="m-auto flex flex-wrap justify-center gap-1 p-2 @sm:gap-2 @sm:p-4">
+    <div className="flex h-full overflow-auto">
+      <div className="m-auto flex w-full max-w-56 flex-col gap-0.5 p-3">
         {TAB_KINDS.map((kind, i) => (
           <button
             key={kind}
             onClick={() => onPick(kind)}
-            className="relative flex w-[4.5rem] flex-col items-center gap-1.5 rounded-xl border border-transparent px-2 py-2 text-xs text-muted-foreground hover:border-border hover:bg-foreground/[0.03] hover:text-foreground @sm:w-24 @sm:gap-2 @sm:px-3 @sm:py-3"
+            className="flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           >
+            <TabIcon kind={kind} className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{KIND_META[kind].label}</span>
             <kbd
               className={cn(
-                "absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded border font-sans text-[10px]",
+                "flex size-5 shrink-0 items-center justify-center rounded border font-sans text-[11px]",
                 focused ? "border-ring/50 text-foreground" : "text-muted-foreground/60",
               )}
             >
               {i + 1}
             </kbd>
-            <TabIcon kind={kind} className="size-5" />
-            {KIND_META[kind].label}
           </button>
         ))}
       </div>

@@ -3,7 +3,9 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -27,15 +29,25 @@ func init() {
 }
 
 func main() {
+	// The server never uses the Vite dev server (windows load the UI themselves). A dev build
+	// that sees this waits for Vite at startup and exits when it isn't running.
+	os.Unsetenv("FRONTEND_DEVSERVER_URL")
+
 	dir, err := dataDir()
 	if err != nil {
 		log.Fatal(err)
 	}
-	// One server per data directory.
-	if info, err := server.ReadInfo(dir); err == nil && server.Ping(info) {
-		log.Printf("server already running (pid %d)", info.PID)
+	// One server per data directory. The lock (not server.json, which a crash leaves behind)
+	// decides: a second server started at the same moment exits here instead of racing.
+	lock, err := server.AcquireLock(dir)
+	if errors.Is(err, server.ErrLocked) {
+		log.Printf("server already running for %s", dir)
 		return
 	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer lock.Release()
 
 	dbPath, err := store.DefaultPath()
 	if err != nil {
