@@ -1,0 +1,97 @@
+version: '3'
+
+vars:
+  APP_NAME: "harness"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # Target OS for build/package/run. Defaults to the host OS, and is overridden
+  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
+  # tasks below dispatch to the matching platform Taskfile via this variable.
+  GOOS: '{{.GOOS | default OS}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+  ios: ./build/ios/Taskfile.yml
+  android: ./build/android/Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application (desktop window + background server)
+    cmds:
+      - task: "{{.GOOS}}:build"
+      - task: build:sessionserver
+
+  build:sessionserver:
+    summary: Builds bin/harness-server from ../server; it owns sessions, runs in the background and shows a tray icon
+    dir: ../server
+    cmds:
+      # A running server's binary can't be overwritten on Windows, but it can be renamed.
+      # The window replaces an outdated server once it's idle.
+      - cmd: powershell -NoProfile -Command "Get-ChildItem '{{.OUT_DIR}}/{{.APP_NAME}}-server.*.old.exe' -ErrorAction SilentlyContinue | Remove-Item -ErrorAction SilentlyContinue; if (Test-Path '{{.OUT_DIR}}/{{.APP_NAME}}-server.exe') { Move-Item '{{.OUT_DIR}}/{{.APP_NAME}}-server.exe' ('{{.OUT_DIR}}/{{.APP_NAME}}-server.' + [DateTime]::Now.Ticks + '.old.exe') }"
+        platforms: [windows]
+      # The server serves the same UI to browsers; it embeds a copy of the built UI.
+      - cmd: rm -rf internal/webui/dist && mkdir -p internal/webui/dist && cp -R ../frontend/ui/dist/. internal/webui/dist/ && touch internal/webui/dist/.gitkeep
+        platforms: [darwin, linux]
+      - cmd: powershell -NoProfile -Command "Remove-Item internal/webui/dist -Recurse -Force -ErrorAction SilentlyContinue; Copy-Item ../frontend/ui/dist internal/webui/dist -Recurse; New-Item internal/webui/dist/.gitkeep -ItemType File -Force | Out-Null"
+        platforms: [windows]
+      # Icon, version info and manifest (DPI awareness, modern tray menus) for the server exe.
+      - cmd: wails3 generate syso -arch {{ARCH}} -icon ../frontend/build/windows/icon.ico -manifest ../frontend/build/windows/wails.exe.manifest -info ../frontend/build/windows/info.json -out wails_windows_{{ARCH}}.syso
+        platforms: [windows]
+      - go build {{.SERVER_FLAGS}} -o "{{.OUT_DIR}}/{{.APP_NAME}}-server{{exeExt}}" .
+      - cmd: powershell -NoProfile -Command "Remove-Item *.syso -ErrorAction SilentlyContinue"
+        platforms: [windows]
+    vars:
+      OUT_DIR: '../frontend/{{.BIN_DIR}}'
+      # -H windowsgui: no console window; output goes to server.log when the window starts it.
+      SERVER_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{if eq OS "windows"}} -ldflags="-H windowsgui"{{end}}{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s{{if eq OS "windows"}} -H windowsgui{{end}}"{{end}}'
+    env:
+      CGO_ENABLED: '{{if .CGO_ENABLED}}{{.CGO_ENABLED}}{{else if eq OS "windows"}}0{{else}}1{{end}}'
+
+  package:
+    summary: Packages a production build of the application
+    cmds:
+      - task: "{{.GOOS}}:package"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{.GOOS}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  install:msix:tools:
+    summary: Installs tools required for Windows MSIX packaging
+    cmds:
+      - task: windows:install:msix:tools
+
+  setup:docker:
+    summary: Builds Docker image for cross-compilation (~800MB download)
+    cmds:
+      - task: common:setup:docker
+
+  build:server:
+    summary: Builds the application in server mode (no GUI, HTTP server only)
+    cmds:
+      - task: common:build:server
+
+  run:server:
+    summary: Runs the application in server mode
+    cmds:
+      - task: common:run:server
+
+  build:docker:
+    summary: Builds a Docker image for server mode deployment
+    cmds:
+      - task: common:build:docker
+
+  run:docker:
+    summary: Builds and runs the Docker image
+    cmds:
+      - task: common:run:docker

@@ -3,6 +3,7 @@
 ## Run
 
 ```sh
+cd frontend
 wails3 dev      # dev mode with hot reload
-wails3 build    # produces bin/harness(.exe) and bin/harness-server(.exe)
+wails3 build    # produces frontend/bin/harness(.exe) and frontend/bin/harness-server(.exe)
 ```

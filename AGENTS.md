@@ -10,7 +10,7 @@
   session. `wails3 dev` rebuilds and restarts on every Go change, so for longer work use a
   separate git worktree outside the watched folder, and copy the changes back when done. To
   run or test the app, start a separate instance with its own `HARNESS_DB` (its own data
-  directory, server and WebView profile) and binaries built outside `bin/`.
+  directory, server and WebView profile) and binaries built outside `frontend/bin/`.
 
 ## What it is
 
@@ -24,18 +24,26 @@ Requires `claude` and/or `copilot` on PATH. For WSL projects, they must be on PA
 
 ## Architecture
 
-Harness is two processes built from the same package:
+Harness is two processes, each its own Go module:
 
-- **`harness-server`** (`-tags harness_server`, `main_server.go`) owns the database, agent runs
+- **`harness-server`** (`server/`, module `harness/server`) owns the database, agent runs
   and terminals. It is a windowless Wails app with a tray icon (Windows) / menu bar item
   (macOS) showing what's running, with "Open Harness" and "Quit Harness Server". A custom
-  transport (`internal/server/transport.go`) serves bound services over HTTP and events over
+  transport (`server/internal/server/transport.go`) serves bound services over HTTP and events over
   WebSocket on `127.0.0.1` with a random port and a per-run token. It keeps running when
   windows close and never exits on its own (quit it from the tray).
-- **`harness`** (`main_desktop.go`) is the window. It finds the server through
-  `<data dir>/server.json`, starting it if needed, and forwards bound-method calls,
-  attachments and events (`internal/desktop`). Window, dialog and other native runtime calls
-  stay local. Closing it never stops a session.
+- **`harness`** (`frontend/`, module `harness/frontend`) is the window: the Wails app with the
+  React UI in `frontend/ui`. It finds the server through `<data dir>/server.json`, starting it
+  if needed, and forwards bound-method calls, attachments and events (`internal/desktop`).
+  Window, dialog and other native runtime calls stay local. Closing it never stops a session.
+
+The contract between them is the public package `harness/server/client` (data dir, server
+info, headers, event names, finding and starting the server). The frontend module imports it
+through `replace harness/server => ../server`; everything else in the server is `internal`.
+All build tasks live in `frontend/` (Taskfile, `build/`): `build:sessionserver` builds
+`../server` into `frontend/bin/harness-server`, and `wails3 dev` (run in `frontend/`) watches
+the whole repo, so server changes rebuild too. The server also serves the UI to browsers from
+a copy of `frontend/ui/dist` that `build:sessionserver` puts in `server/internal/webui/dist`.
 
 Only one server runs per data directory: it holds `<data dir>/server.lock` (an OS file lock,
 released even if it crashes), and a second one exits at once. The server is started without the
@@ -56,7 +64,7 @@ The server log is `<data dir>/server.log`.
 Double-tapping Ctrl (⌘ on macOS) anywhere opens the quick chat: a floating, always-on-top,
 transparent window with one chat, like Spotlight (the design comes from the earlier cmdcmd
 app). The hotkey lives in the server, which keeps running when windows close
-(`internal/hotkey` for double taps through a keyboard hook / event tap,
+(`server/internal/hotkey` for double taps through a keyboard hook / event tap,
 `services.HotkeyService` for combinations through Wails' global shortcuts; the choice is in
 Settings › Keyboard shortcuts and saved in the database). A press emits `quick:toggle` to the
 connected desktop app (`Transport.HasDesktop`), or starts `harness --quick` when none is
@@ -68,7 +76,7 @@ it loses focus (except to its own file picker). Chats started in it get a group 
 window once something is sent. On Windows the server calls `AllowSetForegroundWindow` and
 the window joins the foreground thread's input to take focus from the app in front. On macOS
 the window is a non-activating panel, double taps need Input Monitoring, and the transparent
-webview needs `-tags private_mac_apis` (set in `build/darwin/Taskfile.yml`).
+webview needs `-tags private_mac_apis` (set in `frontend/build/darwin/Taskfile.yml`).
 
 A browser can use the server directly at `http://127.0.0.1:<port>/?token=<token>`
 (values from `server.json`); window controls and the folder picker only work in the desktop app.
@@ -76,36 +84,41 @@ A browser can use the server directly at `http://127.0.0.1:<port>/?token=<token>
 ## Layout
 
 ```
-main.go                     shared: embedded frontend, data dir
-main_server.go              server: store, providers, services (+ server_tray.go)
-main_desktop.go             window: finds/starts the server, proxies to it
-quick*.go                   window: the quick chat's floating window
-internal/
-  hotkey/                   system-wide double-tap detection (Windows hook, macOS event tap)
-  platform/                 native vs WSL execution, path translation, shell choice
-  store/                    SQLite (pure Go) persistence: projects, sessions, messages
-  provider/                 Provider/Conn interfaces + Claude Code (stream-json) / Copilot (ACP) adapters
-  gitx/                     git CLI wrapper: status with line counts, diffs, commit-all, push
-  server/                   server discovery (server.json), lock, auth, HTTP/WebSocket transport, spawning
-  desktop/                  window-side proxy to the server and event relay
-  services/                 Wails services exposed to the frontend
-    projects.go             sidebar tree CRUD, session settings
-    chat.go, transcript.go  live conversations: turns, queue, steering; streams `chat:message`
-    permissions.go          permission prompts, questions, plan approval; slash commands
-    rewind.go               /clear, rewind, fork
-    files.go                file explorer (sandboxed to project root)
-    terminal.go             PTY shells (ConPTY on Windows) via go-pty
-    system.go               OS info, folder picker
-    hotkey.go               the quick chat's hotkey
-frontend/src/
-  stores/                   zustand: app (data), groups and layout, settings, theme, sort
-  components/sidebar/       workspaces and groups (both drag to reorder)
-  components/workspace/     groups of windows and tabs
-  components/chat/          message list, tool calls, composer and pickers
-  components/quick/         the quick chat window
-  components/panel/         tab contents: files, changes, terminal (xterm.js), browser
-  components/settings/      settings dialog
-  components/layout/        shell, startup screen, custom title bar and window controls
+server/                     the server (module harness/server)
+  main.go                   store, providers, services (+ tray.go)
+  client/                   public: data dir, server.json, finding/starting the server, shared names
+  internal/
+    hotkey/                 system-wide double-tap detection (Windows hook, macOS event tap)
+    platform/               native vs WSL execution, path translation, shell choice
+    store/                  SQLite (pure Go) persistence: projects, sessions, messages
+    provider/               Provider/Conn interfaces + Claude Code (stream-json) / Copilot (ACP) adapters
+    gitx/                   git CLI wrapper: status with line counts, diffs, commit-all, push
+    server/                 host (auth, status, shutdown), lock, HTTP/WebSocket transport
+    webui/                  the UI served to browsers (copy of frontend/ui/dist)
+    services/               Wails services exposed to the frontend
+      projects.go           sidebar tree CRUD, session settings
+      chat.go, transcript.go  live conversations: turns, queue, steering; streams `chat:message`
+      permissions.go        permission prompts, questions, plan approval; slash commands
+      rewind.go             /clear, rewind, fork
+      files.go              file explorer (sandboxed to project root)
+      terminal.go           PTY shells (ConPTY on Windows) via go-pty
+      system.go             OS info, folder picker
+      hotkey.go             the quick chat's hotkey
+frontend/                   the desktop app (module harness/frontend); run wails3 here
+  main.go                   window: finds/starts the server, proxies to it
+  quick*.go                 the quick chat's floating window
+  internal/desktop/         window-side proxy to the server and event relay
+  build/, Taskfile.yml      Wails build config; also builds the server
+  ui/                       React app (Vite); ui/bindings are generated from the server
+  ui/src/
+    stores/                 zustand: app (data), groups and layout, settings, theme, sort
+    components/sidebar/     workspaces and groups (both drag to reorder)
+    components/workspace/   groups of windows and tabs
+    components/chat/        message list, tool calls, composer and pickers
+    components/quick/       the quick chat window
+    components/panel/       tab contents: files, changes, terminal (xterm.js), browser
+    components/settings/    settings dialog
+    components/layout/      shell, startup screen, custom title bar and window controls
 ```
 
 ## Notes
@@ -113,7 +126,8 @@ frontend/src/
 - Data lives in `<UserConfigDir>/harness/harness.db`. Set `HARNESS_DB` to override it; the
   server, `server.json` and (for the window) the WebView profile follow that directory, so a
   custom database runs fully separate from the regular app.
-- Bindings are generated from the server build (`-tags harness_server`), which registers the services.
+- Bindings are generated from the server module, which registers the services
+  (`common:generate:bindings` runs `wails3 generate bindings -d ../frontend/ui/bindings` in `server/`).
 - The window is opaque (no translucency or blur). The UI is sized in rem: the app-interface text
   size scales the root font size, and tab content divides that back out (`tab-layer.tsx`).
 - Terminals get a colour-friendly environment (`terminalEnv` in `terminal.go`: no `NO_COLOR`,
@@ -121,7 +135,7 @@ frontend/src/
 - Each session has its own provider-side session id. Switching provider starts a fresh
   provider conversation.
 - Claude Code runs over the stream-json control protocol the Agent SDK uses
-  (`internal/provider/claudeconn.go`): one `claude -p` process per chat, kept open between
+  (`server/internal/provider/claudeconn.go`): one `claude -p` process per chat, kept open between
   turns (closed after 2 hours idle with no background tasks). That gives permission prompts
   (`--permission-prompt-tool stdio`), AskUserQuestion and plan approval, MCP servers asking
   for input (`elicitation` requests: a form or a link), slash commands
@@ -130,7 +144,7 @@ frontend/src/
   on). Rewind and fork cut the conversation with `--resume <id> --fork-session
   --resume-session-at <entry>`; each user message is sent with its Harness id as its uuid.
 - Copilot runs as an Agent Client Protocol server (`copilot --acp`,
-  `internal/provider/copilotacp.go`): one process per chat, which asks before using tools.
+  `server/internal/provider/copilotacp.go`): one process per chat, which asks before using tools.
   Model, effort and mode are ACP config options (Accept edits approves edit requests in
   Harness; Full access turns on `allow_all`). ACP picks new sessions' ids, so
   `<data dir>/copilot-sessions.json` maps Harness's ids to Copilot's. Copilot can't take
@@ -151,10 +165,10 @@ frontend/src/
 - Sidebar lists reorder live while dragging (`sidebar/use-live-reorder.ts`, with `hooks/use-flip.ts`
   sliding items to their new place). Dropping somewhere the sort wouldn't put it switches the
   sidebar to manual order.
-- `HARNESS_E2E=1 go test ./internal/services -run ClaudeEndToEnd` checks the Claude
+- In `server/`, `HARNESS_E2E=1 go test ./internal/services -run ClaudeEndToEnd` checks the Claude
   integration against the real CLI (uses Haiku); `HARNESS_E2E=1 go test ./internal/provider
   -run CopilotEndToEnd` does the same for Copilot.
 - On Windows, a project runs in WSL when its folder lives inside a distro (`\\wsl.localhost\...`
   or `\\wsl$\...`), and natively otherwise. There is no manual switch.
-- To add a provider, implement `provider.Provider` and register it in `main_server.go`.
-- Model lists are static in `internal/provider/claude.go` and `copilot.go`.
+- To add a provider, implement `provider.Provider` and register it in `server/main.go`.
+- Model lists are static in `server/internal/provider/claude.go` and `copilot.go`.
