@@ -13,3 +13,4 @@ frontend/build/android/gen/
 server/internal/webui/dist/*
 !server/internal/webui/dist/.gitkeep
 *.syso
+.DS_Store
