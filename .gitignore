@@ -1,16 +1,13 @@
 .task
-frontend/bin
-frontend/ui/dist
-frontend/ui/node_modules
-frontend/build/linux/appimage/build
-frontend/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+bin
+ui/dist
+ui/node_modules
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Mobile generated (per-machine; overlays hold absolute paths)
-frontend/build/ios/xcode/overlay.json
-frontend/build/ios/xcode/gen/
-frontend/build/android/overlay.json
-frontend/build/android/gen/
-# Copy of frontend/ui/dist that the server embeds (made by build:sessionserver)
-server/internal/webui/dist/*
-!server/internal/webui/dist/.gitkeep
+build/ios/xcode/overlay.json
+build/ios/xcode/gen/
+build/android/overlay.json
+build/android/gen/
 *.syso
 .DS_Store
