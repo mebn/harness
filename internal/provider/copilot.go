@@ -44,7 +44,8 @@ func (Copilot) Info() Info {
 			{ID: "xhigh", Label: "Extra high"},
 			{ID: "max", Label: "Max"},
 		},
-		Modes:         claudeModes,
+		// Copilot has nothing that reviews tool use for the user, so no Auto mode.
+		Modes:         []Option{optManual, optEdits, optPlan, optFull},
 		DefaultModel:  "auto",
 		DefaultEffort: "medium",
 	}

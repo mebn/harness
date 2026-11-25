@@ -42,7 +42,7 @@ func (Codex) Info() Info {
 			{ID: "xhigh", Label: "Extra high"},
 			{ID: "max", Label: "Max"},
 		},
-		Modes:         claudeModes,
+		Modes:         allModes,
 		DefaultModel:  "gpt-5.6-terra",
 		DefaultEffort: "medium",
 		Steer:         true,

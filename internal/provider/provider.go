@@ -36,19 +36,25 @@ type Info struct {
 	Interactive bool `json:"interactive"`
 }
 
-// Permission modes; each provider maps them to its own flags.
+// Permission modes, named as in Claude Code; each provider maps them to its own flags.
 const (
-	ModeAsk   = "ask" // ask before tools that need permission
-	ModeFull  = "full"
+	ModeAuto  = "auto" // a reviewer (not the user) approves or denies tool use
+	ModeAsk   = "ask"  // "Manual mode": ask before tools that need permission
 	ModeEdits = "edits"
 	ModePlan  = "plan"
+	ModeFull  = "full"
 )
 
-var commonModes = []Option{
-	{ID: ModeFull, Label: "Full access"},
-	{ID: ModeEdits, Label: "Accept edits"},
-	{ID: ModePlan, Label: "Plan"},
-}
+var (
+	optAuto   = Option{ID: ModeAuto, Label: "Auto mode"}
+	optManual = Option{ID: ModeAsk, Label: "Manual mode"}
+	optEdits  = Option{ID: ModeEdits, Label: "Accept edits"}
+	optPlan   = Option{ID: ModePlan, Label: "Plan mode"}
+	optFull   = Option{ID: ModeFull, Label: "Full access"}
+
+	// allModes are every mode, for providers that have them all.
+	allModes = []Option{optAuto, optManual, optEdits, optPlan, optFull}
+)
 
 // Settings are the per-session choices a conversation runs with.
 type Settings struct {

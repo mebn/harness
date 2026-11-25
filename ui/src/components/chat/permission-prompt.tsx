@@ -228,8 +228,11 @@ function PlanPrompt({ req, onAnswer }: PromptProps) {
         <Button size="sm" onClick={() => onAnswer({ allow: true, mode: "edits" })}>
           Accept edits
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => onAnswer({ allow: true, mode: "auto" })}>
+          Auto mode
+        </Button>
         <Button size="sm" variant="secondary" onClick={() => onAnswer({ allow: true, mode: "ask" })}>
-          Ask permissions
+          Manual mode
         </Button>
         <Button size="sm" variant="secondary" onClick={() => onAnswer({ allow: true, mode: "full" })}>
           Full access

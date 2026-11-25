@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, FilePen, ListTodo, Search, ShieldOff, ShieldQuestion, Star, Zap } from "lucide-react";
+import { Check, ChevronDown, FilePen, ListTodo, Search, ShieldCheck, ShieldOff, ShieldQuestion, Star, Zap } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { ClaudeLogo, OpenAILogo, ProviderLogo } from "@/components/common/provider-logo";
 import type { Option, ProviderInfo, Session } from "@/lib/backend";
@@ -69,6 +69,7 @@ function ModeIcon({ mode, className }: { mode: string; className?: string }) {
   if (mode === "plan") return <ListTodo className={className} />;
   if (mode === "edits") return <FilePen className={className} />;
   if (mode === "ask") return <ShieldQuestion className={className} />;
+  if (mode === "auto") return <ShieldCheck className={className} />;
   return <ShieldOff className={className} />;
 }
 

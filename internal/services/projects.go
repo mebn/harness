@@ -128,6 +128,9 @@ func (p *ProjectService) CreateSession(projectID, worktree string) (store.Sessio
 		}
 		sess.Provider, sess.Model, sess.Effort = d.Provider, d.Model, d.Effort
 	}
+	if p, ok := p.providers.Get(sess.Provider); ok && !hasOption(p.Info().Modes, sess.Mode) {
+		sess.Mode = provider.ModeAsk
+	}
 	if _, ok := p.providers.Get(sess.Provider); !ok {
 		info := p.providers.Default().Info()
 		sess.Provider, sess.Model, sess.Effort = info.ID, info.DefaultModel, info.DefaultEffort
@@ -198,6 +201,9 @@ func (p *ProjectService) UpdateSessionSettings(id, providerID, model, effort, mo
 		}
 		if !hasOption(info.Efforts, effort) {
 			effort = info.DefaultEffort
+		}
+		if !hasOption(info.Modes, mode) {
+			mode = provider.ModeAsk
 		}
 	}
 	canFast := prov.Info().Fast

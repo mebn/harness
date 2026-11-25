@@ -21,12 +21,7 @@ import (
 // stdin/stdout. No system prompt or instructions are injected: Claude Code uses its own config.
 type Claude struct{}
 
-var claudeModes = []Option{
-	{ID: ModeAsk, Label: "Ask permissions"},
-	{ID: ModeEdits, Label: "Accept edits"},
-	{ID: ModePlan, Label: "Plan"},
-	{ID: ModeFull, Label: "Full access"},
-}
+var claudeModes = allModes
 
 func (Claude) Info() Info {
 	_, err := exec.LookPath("claude")
@@ -129,8 +124,10 @@ func claudeMode(mode string) string {
 		return "plan"
 	case ModeEdits:
 		return "acceptEdits"
+	case ModeAuto:
+		return "auto"
 	case ModeAsk:
-		return "default"
+		return "manual"
 	default:
 		return "bypassPermissions"
 	}
@@ -146,7 +143,9 @@ func harnessMode(mode string) string {
 		return ModePlan
 	case "acceptEdits":
 		return ModeEdits
-	case "default":
+	case "auto":
+		return ModeAuto
+	case "manual", "default": // "default" before Claude Code named it manual
 		return ModeAsk
 	case "bypassPermissions":
 		return ModeFull

@@ -228,7 +228,7 @@ func (c *codexConn) handshake(req OpenRequest) error {
 	s := c.settings
 	c.mu.Unlock()
 	params := map[string]any{"cwd": platform.PathFor(req.Env, req.Dir), "approvalPolicy": codexApproval(s.Mode),
-		"sandbox": codexSandboxMode(s.Mode)}
+		"sandbox": codexSandboxMode(s.Mode), "approvalsReviewer": codexReviewer(s.Mode)}
 	if s.Model != "" {
 		params["model"] = s.Model
 	}
@@ -268,8 +268,9 @@ func (c *codexConn) handshake(req OpenRequest) error {
 	return nil
 }
 
-// Permission modes as Codex approval policies and sandboxes. Ask runs read-only, so every
-// edit and every command that writes asks; Accept edits lets Codex write in the workspace.
+// Permission modes as Codex approval policies and sandboxes. Manual runs read-only, so every
+// edit and every command that writes asks; Accept edits lets Codex write in the workspace;
+// Auto mode does too, and sends what would ask to Codex's auto-review agent instead of the user.
 func codexApproval(mode string) string {
 	if mode == ModeFull {
 		return "never"
@@ -277,11 +278,19 @@ func codexApproval(mode string) string {
 	return "on-request"
 }
 
+// codexReviewer is who reviews approval requests: Codex's auto-review agent in Auto mode.
+func codexReviewer(mode string) string {
+	if mode == ModeAuto {
+		return "auto_review"
+	}
+	return "user"
+}
+
 func codexSandboxMode(mode string) string {
 	switch mode {
 	case ModeFull:
 		return "danger-full-access"
-	case ModeEdits:
+	case ModeEdits, ModeAuto:
 		return "workspace-write"
 	}
 	return "read-only"
@@ -291,7 +300,7 @@ func codexSandboxPolicy(mode string) map[string]any {
 	switch mode {
 	case ModeFull:
 		return map[string]any{"type": "dangerFullAccess"}
-	case ModeEdits:
+	case ModeEdits, ModeAuto:
 		return map[string]any{"type": "workspaceWrite", "writableRoots": []string{}, "networkAccess": false,
 			"excludeTmpdirEnvVar": false, "excludeSlashTmp": false}
 	}
@@ -924,7 +933,8 @@ func (c *codexConn) turnParams(in Input) map[string]any {
 	c.planMode = s.Mode == ModePlan
 	c.mu.Unlock()
 	p := map[string]any{"threadId": tid, "clientUserMessageId": in.ID, "input": c.userInput(in),
-		"approvalPolicy": codexApproval(s.Mode), "sandboxPolicy": codexSandboxPolicy(s.Mode)}
+		"approvalPolicy": codexApproval(s.Mode), "sandboxPolicy": codexSandboxPolicy(s.Mode),
+		"approvalsReviewer": codexReviewer(s.Mode)}
 	if s.Model != "" {
 		p["model"], model = s.Model, s.Model
 	}
