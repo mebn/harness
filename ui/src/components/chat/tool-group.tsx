@@ -10,13 +10,12 @@ export const STANDALONE = new Set(["ExitPlanMode", "AskUserQuestion"]);
 
 export type Segment = { part: Part; index: number } | { id: string; parts: { part: Part; index: number }[] };
 
-const groupable = (p: Part) =>
-  p.type === "thinking" || (p.type === "tool" && !STANDALONE.has(p.toolName ?? ""));
+const groupable = (p: Part) => p.type === "tool" && !STANDALONE.has(p.toolName ?? "");
 
 /**
- * Splits a message's top-level parts into segments: runs of two or more tool calls (with any
- * thinking between them) become one group; everything else stays a part of its own.
- * Text and errors end a run. A subagent's own calls (parentId) aren't top-level.
+ * Splits a message's top-level parts into segments: runs of two or more tool calls become one
+ * group; everything else stays a part of its own. Thinking, text and errors end a run, so
+ * thinking always shows. A subagent's own calls (parentId) aren't top-level.
  */
 export function segment(parts: Part[]): Segment[] {
   const out: Segment[] = [];
@@ -78,7 +77,6 @@ export function ToolGroup({ id, parts, children }: { id: string; parts: Part[]; 
 
 /** What the group is doing right now, shown while it's collapsed. */
 function ActiveLabel({ part }: { part: Part }) {
-  if (part.type === "thinking") return <span className="truncate italic">Thinking…</span>;
   return (
     <>
       <span className="shrink-0 font-medium text-foreground/80">{isAgentPart(part) ? agentLabel(part) : displayName(part.toolName ?? "")}</span>
