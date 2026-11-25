@@ -28,6 +28,10 @@ const trayRefresh = 2 * time.Second
 func setupTray(app *application.App, host *server.Host, transport *server.Transport, hotkeys *services.HotkeyService) {
 	toggleQuick := func() { toggleQuickChat(transport) }
 	menu := application.NewMenu()
+	if devBuild {
+		menu.Add("Development build").SetEnabled(false)
+		menu.AddSeparator()
+	}
 	status := menu.Add("Starting…").SetEnabled(false)
 	menu.AddSeparator()
 	menu.Add("Open Harness").OnClick(func(*application.Context) { openWindow() })
@@ -64,7 +68,11 @@ func setupTray(app *application.App, host *server.Host, transport *server.Transp
 			quit.SetLabel("Quit Harness Server")
 		}
 		menu.Update()
-		tray.SetTooltip("Harness Server: " + text)
+		name := "Harness Server"
+		if devBuild {
+			name += " (dev)"
+		}
+		tray.SetTooltip(name + ": " + text)
 	}
 	// Menus can only change on the main thread, which exists once the app runs. Calling
 	// InvokeSync before that crashes the server.
