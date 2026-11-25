@@ -86,7 +86,16 @@ function WorkSection({ id, parts, children }: { id: string; parts: Part[]; child
   );
 }
 
-export const MessageItem = memo(function MessageItem({ message, live = false }: { message: Message; live?: boolean }) {
+export const MessageItem = memo(function MessageItem({
+  message,
+  live = false,
+  continued = false,
+}: {
+  message: Message;
+  live?: boolean;
+  /** The turn's reply goes on in a later message, so all of this one is work. */
+  continued?: boolean;
+}) {
   const parts = message.parts ?? [];
 
   // Shown in the chat only (e.g. the model changed); never part of the conversation.
@@ -139,7 +148,7 @@ export const MessageItem = memo(function MessageItem({ message, live = false }: 
     );
 
   // Once the reply is finished, its work folds away behind one line and only the answer shows.
-  const start = live ? 0 : answerStart(parts);
+  const start = live ? 0 : continued ? parts.length : answerStart(parts);
   const work = parts.slice(0, start);
   if (work.some((p) => p.type === "thinking" || p.type === "tool")) {
     const first = (s: (typeof segments)[number]) => ("id" in s ? s.parts[0].index : s.index);

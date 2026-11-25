@@ -50,7 +50,12 @@ export function MessageList({ messages, running, sessionId }: Props) {
       <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]">
         <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
           {messages.map((m, i) => (
-            <MessageItem key={m.id} message={m} live={running && i === messages.length - 1} />
+            <MessageItem
+              key={m.id}
+              message={m}
+              live={running && i === messages.length - 1}
+              continued={m.role === "assistant" && continuedAt(messages, i)}
+            />
           ))}
           {running && <TurnTimer since={lastUserMessageAt(messages)} />}
           <QueueList sessionId={sessionId} />
@@ -102,4 +107,16 @@ function TurnTimer({ since }: { since: number }) {
       {formatElapsed(now - since)}
     </div>
   );
+}
+
+/**
+ * Whether the turn's reply goes on in a later message (split by a compaction or a finished task),
+ * so this one holds only work, not the answer.
+ */
+function continuedAt(messages: Message[], i: number): boolean {
+  for (let j = i + 1; j < messages.length; j++) {
+    if (messages[j].role === "user") return false;
+    if (messages[j].role === "assistant") return true;
+  }
+  return false;
 }
