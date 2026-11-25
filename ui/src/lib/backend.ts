@@ -13,6 +13,7 @@ export {
 } from "@bindings/harness/internal/services";
 
 export type {
+  AgentAccount,
   AgentInstall,
   NewChatDefaults,
   SystemInfo,

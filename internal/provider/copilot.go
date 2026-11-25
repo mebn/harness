@@ -28,6 +28,7 @@ func (Copilot) Info() Info {
 	_, err := exec.LookPath("copilot")
 	return Info{
 		ID:        "copilot",
+		Tool:      "copilot",
 		Name:      "Copilot",
 		Available: err == nil || platform.HasWSL(),
 		Models: []Option{

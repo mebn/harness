@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +34,50 @@ export function OpenAILogo({ className }: { className?: string }) {
   return <Mark d={OPENAI} className={className} />;
 }
 
-/** A provider's logo by its id ("claude", "copilot", "codex"); a generic bot for others. */
+/**
+ * A provider's logo by its id or CLI ("claude", "copilot", "codex"; an account's id like
+ * "claude@a1b2" counts as its CLI); a generic bot for others.
+ */
 export function ProviderLogo({ id, className }: { id: string; className?: string }) {
+  id = id.split("@")[0];
   if (id === "claude") return <ClaudeLogo className={className} />;
   if (id === "copilot") return <CopilotLogo className={className} />;
   if (id === "codex") return <OpenAILogo className={className} />;
   return <Bot className={className} />;
+}
+
+/** Names a provider's account: its name or email, else its number. */
+export function accountLabel(p: { account: string; accountNo: number }): string {
+  return p.account || (p.accountNo > 0 ? `Account ${p.accountNo}` : "");
+}
+
+/**
+ * An icon with a provider's account number in its corner, when its CLI has several accounts.
+ * The badge's ring takes the colour of what's behind it (ringClassName) so it cuts out of the icon.
+ */
+export function AccountBadge({
+  no,
+  children,
+  className,
+  ringClassName = "ring-popover",
+}: {
+  no: number;
+  children: ReactNode;
+  className?: string;
+  ringClassName?: string;
+}) {
+  if (no <= 0) return <>{children}</>;
+  return (
+    <span className={cn("relative inline-flex shrink-0", className)}>
+      {children}
+      <span
+        className={cn(
+          "absolute -right-1.5 -bottom-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-foreground px-0.5 text-[8px] leading-none font-semibold text-background tabular-nums ring-2",
+          ringClassName,
+        )}
+      >
+        {no}
+      </span>
+    </span>
+  );
 }

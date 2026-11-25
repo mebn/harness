@@ -9,6 +9,45 @@ import * as provider$0 from "../provider/models.js";
 import * as store$0 from "../store/models.js";
 
 /**
+ * AgentAccount is one account of an agent CLI: the CLI's own sign-in (ID "") or another one
+ * Harness keeps in a config directory of its own. Each is a provider chats can pick.
+ */
+export interface AgentAccount {
+    "id": string;
+
+    /**
+     * the provider id chats use
+     */
+    "provider": string;
+    "tool": string;
+
+    /**
+     * No numbers the CLI's accounts from 1 (its own sign-in).
+     */
+    "no": number;
+
+    /**
+     * given in Settings
+     */
+    "name": string;
+
+    /**
+     * as whom it's signed in (an email or user name), when known
+     */
+    "email": string;
+
+    /**
+     * SignedIn is "yes", "no" or "" (unknown).
+     */
+    "signedIn": string;
+
+    /**
+     * its config directory; "" for the CLI's default
+     */
+    "dir": string;
+}
+
+/**
  * AgentInstall is one agent CLI in one place it can run: natively or in WSL.
  */
 export interface AgentInstall {

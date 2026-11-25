@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, FilePen, ListTodo, Search, ShieldCheck, ShieldOff, ShieldQuestion, Star, Zap } from "lucide-react";
+import { Check, ChevronDown, FilePen, Gauge, ListTodo, Search, ShieldCheck, ShieldOff, ShieldQuestion, Star, Zap } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import { ClaudeLogo, OpenAILogo, ProviderLogo } from "@/components/common/provider-logo";
+import { AccountBadge, ClaudeLogo, OpenAILogo, ProviderLogo, accountLabel } from "@/components/common/provider-logo";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Option, ProviderInfo, Session } from "@/lib/backend";
 import { isMac } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import type { SessionSettings } from "@/stores/app-store";
+import { useApp, type SessionSettings } from "@/stores/app-store";
 
 type Props = {
   providers: ProviderInfo[];
@@ -43,20 +50,22 @@ function saveFavorites(list: string[]) {
   }
 }
 
-function ProviderIcon({ id, className }: { id: string; className?: string }) {
-  return <ProviderLogo id={id} className={className} />;
-}
-
-/** Icon for a model: its family when the id tells, otherwise the provider's. */
-function ModelIcon({ providerId, modelId, className }: { providerId: string; modelId: string; className?: string }) {
+/** Icon for a model: its family when the id tells, otherwise its CLI's. */
+function ModelIcon({ tool, modelId, className }: { tool: string; modelId: string; className?: string }) {
   if (modelId.startsWith("claude")) return <ClaudeLogo className={className} />;
   if (/^(gpt|o\d|codex)/.test(modelId)) return <OpenAILogo className={className} />;
-  return <ProviderIcon id={providerId} className={className} />;
+  return <ProviderLogo id={tool} className={className} />;
 }
 
 /** Full model name, e.g. "Claude Opus 5.5" for a Claude model labelled "Opus 5.5". */
 function modelName(e: Entry) {
   return e.model.id.startsWith("claude") && !e.model.label.startsWith("Claude") ? `Claude ${e.model.label}` : e.model.label;
+}
+
+/** Provider name with its account, e.g. "Claude Code · me@example.com". */
+function providerTitle(p: ProviderInfo) {
+  const account = accountLabel(p);
+  return account ? `${p.name} · ${account}` : p.name;
 }
 
 function Kbd({ children }: { children: ReactNode }) {
@@ -73,26 +82,73 @@ function ModeIcon({ mode, className }: { mode: string; className?: string }) {
   return <ShieldOff className={className} />;
 }
 
-type SegmentOption = { id: string; label: string; icon?: ReactNode };
+type MenuOption = { id: string; label: string; icon: ReactNode };
 
-function Segmented({ value, options, onChange }: { value: string; options: SegmentOption[]; onChange: (id: string) => void }) {
+/** A dropdown in the picker's footer: the current choice, opening a menu of all of them. */
+function FooterMenu({
+  label,
+  value,
+  options,
+  onChange,
+  align,
+}: {
+  label: string;
+  value: string;
+  options: MenuOption[];
+  onChange: (id: string) => void;
+  align: "start" | "end";
+}) {
+  const current = options.find((o) => o.id === value) ?? options[0];
   return (
-    <div className="flex rounded-lg bg-muted p-0.5 text-xs">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          onClick={() => onChange(o.id)}
-          className={cn(
-            "flex h-6 items-center gap-1 rounded-md px-2 text-muted-foreground outline-none hover:text-foreground",
-            o.id === value && "bg-background text-foreground shadow-sm",
-          )}
-        >
-          {o.icon}
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        title={label}
+        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent data-[state=open]:bg-accent data-[state=open]:text-foreground"
+      >
+        {current?.icon}
+        <span>{current?.label}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align={align} sideOffset={6} className="min-w-44">
+        <DropdownMenuLabel className="px-2 py-1 text-[11px] font-normal text-muted-foreground">{label}</DropdownMenuLabel>
+        {options.map((o) => (
+          <DropdownMenuItem key={o.id} onSelect={() => onChange(o.id)} className="h-8 gap-2 text-xs">
+            {o.icon}
+            <span className="flex-1">{o.label}</span>
+            {o.id === value && <Check className="size-3.5 text-muted-foreground" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RailButton({
+  title,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent",
+        active && "bg-accent text-foreground hover:bg-accent",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -110,7 +166,16 @@ function fastOffText(s: Session): string | undefined {
   return `Fast mode is off${reason ? `: ${reason}` : ""}. Turns run at standard speed.`;
 }
 
-/** Model, provider and reasoning effort in one popover: providers on the left, models in the middle, effort on the right. */
+const SPEEDS: MenuOption[] = [
+  { id: "standard", label: "Standard", icon: <Gauge className="size-3.5" /> },
+  { id: "fast", label: "Fast", icon: <Zap className="size-3.5" /> },
+];
+
+/**
+ * Model, provider and reasoning effort in one popover: providers on the left (a CLI's
+ * accounts numbered on their icons), models in the middle, effort on the right, and speed and
+ * permissions in the footer.
+ */
 export function ModelPicker({ providers, provider, session, onChange, lockProvider }: Props) {
   const { model, effort } = session;
   const [open, setOpen] = useState(false);
@@ -118,6 +183,7 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [favorites, setFavorites] = useState(loadFavorites);
+  const reloadProviders = useApp((s) => s.reloadProviders);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
@@ -127,12 +193,13 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
   const fast = provider.fast && session.fast;
   const fastOff = fast ? fastOffText(session) : undefined;
 
-  // Reset to the session's provider each time the picker opens.
+  // Reset to the session's provider each time the picker opens, with accounts up to date.
   useEffect(() => {
     if (!open) return;
     setTab(provider.id);
     setQuery("");
-  }, [open, provider.id]);
+    void reloadProviders();
+  }, [open, provider.id, reloadProviders]);
 
   const entries = useMemo<Entry[]>(() => {
     const all = providers.flatMap((p) => (p.models ?? []).map((m) => ({ provider: p, model: m })));
@@ -140,7 +207,7 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
     let shown: Entry[];
     if (q) {
       // Search spans every provider.
-      shown = all.filter((e) => `${modelName(e)} ${e.model.id} ${e.provider.name}`.toLowerCase().includes(q));
+      shown = all.filter((e) => `${modelName(e)} ${e.model.id} ${providerTitle(e.provider)}`.toLowerCase().includes(q));
     } else if (tab === FAVORITES) {
       shown = favorites.map((k) => all.find((e) => favKey(e) === k)).filter((e): e is Entry => !!e);
     } else {
@@ -180,7 +247,15 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
     saveFavorites(next);
   };
 
+  const selectTab = (id: string) => {
+    setTab(id);
+    setQuery("");
+    search.current?.focus();
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys in the footer's menus (portaled, but bubbling here through React) are theirs.
+    if (!e.currentTarget.contains(e.target as Node)) return;
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && /^Digit[1-9]$/.test(e.code)) {
       const target = entries[Number(e.code.slice(5)) - 1];
@@ -201,15 +276,22 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
     }
   };
 
-  const tabs = [
-    { id: FAVORITES, label: "Favorites", icon: <Star className="size-[18px] fill-current" /> },
-    ...providers.map((p) => ({ id: p.id, label: p.name, icon: <ProviderIcon id={p.id} className="size-5" /> })),
-  ];
+  const tabProvider = providers.find((p) => p.id === tab);
+  const modes: MenuOption[] = (provider.modes ?? []).map((o) => ({
+    id: o.id,
+    label: o.label,
+    icon: <ModeIcon mode={o.id} className="size-3.5" />,
+  }));
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-      <PopoverPrimitive.Trigger className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
-        <ModelIcon providerId={provider.id} modelId={model} className="size-3.5" />
+      <PopoverPrimitive.Trigger
+        title={providerTitle(provider)}
+        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+      >
+        <AccountBadge no={provider.accountNo} ringClassName="ring-card" className="mr-1">
+          <ModelIcon tool={provider.tool} modelId={model} className="size-3.5" />
+        </AccountBadge>
         <span>
           {currentModel?.label ?? model}
           {currentEffort && <span className="ml-1 opacity-70">{currentEffort.label}</span>}
@@ -237,41 +319,42 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
             search.current?.focus();
           }}
           onKeyDown={onKeyDown}
-          className="z-50 flex w-[min(36rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="z-50 flex w-[min(38rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
-          <div className="flex h-64 min-h-0">
-            {/* Provider rail */}
-            <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r py-2">
-              {tabs.map((t, i) => {
-                const disabled = lockProvider && t.id !== FAVORITES && t.id !== provider.id;
-                return (
-                  <div key={t.id} className="contents">
-                    <button
-                      type="button"
-                      title={disabled ? `${t.label} (can't switch while running)` : t.label}
+          {/* The three columns' headers share one height so their lines meet, and rail buttons
+              and list rows share one height so they line up below. */}
+          <div className="flex h-72 min-h-0">
+            {/* Providers */}
+            <div className="flex w-12 shrink-0 flex-col border-r">
+              <div className="flex h-10 shrink-0 items-center justify-center border-b">
+                <RailButton title="Favorites" active={tab === FAVORITES && !query} onClick={() => selectTab(FAVORITES)}>
+                  <Star className="size-[18px] fill-yellow-400 text-yellow-400" />
+                </RailButton>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto p-1 [scrollbar-width:none]">
+                {providers.map((p) => {
+                  const disabled = lockProvider && p.id !== provider.id;
+                  const on = tab === p.id && !query;
+                  return (
+                    <RailButton
+                      key={p.id}
+                      title={disabled ? `${providerTitle(p)} (can't switch while running)` : providerTitle(p)}
                       disabled={disabled}
-                      onClick={() => {
-                        setTab(t.id);
-                        setQuery("");
-                        search.current?.focus();
-                      }}
-                      className={cn(
-                        "relative flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent",
-                        tab === t.id && !query && "text-foreground",
-                      )}
+                      active={on}
+                      onClick={() => selectTab(p.id)}
                     >
-                      {t.icon}
-                      {tab === t.id && !query && <span className="absolute -right-2 h-4 w-0.5 rounded-full bg-primary" />}
-                    </button>
-                    {i === 0 && <div className="my-1 h-px w-7 bg-border" />}
-                  </div>
-                );
-              })}
+                      <AccountBadge no={p.accountNo} ringClassName={on ? "ring-accent" : "ring-popover"}>
+                        <ProviderLogo id={p.tool} className="size-5" />
+                      </AccountBadge>
+                    </RailButton>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Models */}
             <div className="flex min-w-0 flex-1 flex-col border-r">
-              <div className="flex items-center gap-2 border-b px-3 py-2">
+              <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
                 <Search className="size-3.5 shrink-0 text-muted-foreground" />
                 <input
                   ref={search}
@@ -280,6 +363,11 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
                   placeholder="Search models…"
                   className="h-6 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                 />
+                {!query && (
+                  <span className="max-w-[60%] shrink-0 truncate text-[11px] text-muted-foreground/70">
+                    {tab === FAVORITES ? "Favorites" : tabProvider && providerTitle(tabProvider)}
+                  </span>
+                )}
               </div>
               <div ref={list} className="flex-1 overflow-y-auto p-1">
                 {entries.length === 0 && (
@@ -290,6 +378,8 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
                 {entries.map((e, i) => {
                   const selected = e.provider.id === provider.id && e.model.id === model;
                   const fav = favorites.includes(favKey(e));
+                  // Favorites and search mix providers: say whose each model is.
+                  const mixed = !!query || tab === FAVORITES;
                   return (
                     <div
                       key={favKey(e)}
@@ -303,9 +393,15 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
                         i === active && "bg-accent",
                       )}
                     >
-                      <ModelIcon providerId={e.provider.id} modelId={e.model.id} className="size-4 shrink-0" />
-                      <span className="truncate">{modelName(e)}</span>
-                      {(query || tab === FAVORITES) && <span className="truncate text-muted-foreground">{e.provider.name}</span>}
+                      <AccountBadge no={mixed ? e.provider.accountNo : 0} ringClassName={i === active ? "ring-accent" : "ring-popover"}>
+                        <ModelIcon tool={e.provider.tool} modelId={e.model.id} className="size-4 shrink-0" />
+                      </AccountBadge>
+                      <span className="shrink-0">{modelName(e)}</span>
+                      {mixed && (
+                        <span className="min-w-0 truncate text-muted-foreground" title={providerTitle(e.provider)}>
+                          {providerTitle(e.provider)}
+                        </span>
+                      )}
                       {selected && <Check className="size-3.5 shrink-0 text-muted-foreground" />}
                       <div className="flex-1" />
                       <button
@@ -316,11 +412,13 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
                           toggleFavorite(e);
                         }}
                         className={cn(
-                          "flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground",
-                          !fav && "opacity-0 group-hover:opacity-100",
+                          "flex size-5 shrink-0 items-center justify-center rounded",
+                          fav
+                            ? "text-yellow-400 hover:text-yellow-500"
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground",
                         )}
                       >
-                        <Star className={cn("size-3", fav && "fill-current")} />
+                        <Star className={cn("size-3.5", fav && "fill-current")} />
                       </button>
                       {i < 9 && <Kbd>{isMac ? `⌘${i + 1}` : `Ctrl ${i + 1}`}</Kbd>}
                     </div>
@@ -330,8 +428,8 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
             </div>
 
             {/* Reasoning effort */}
-            <div className="flex w-44 shrink-0 flex-col">
-              <div className="flex h-[41px] items-center justify-between gap-2 border-b px-3 text-xs">
+            <div className="flex w-40 shrink-0 flex-col">
+              <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3 text-xs">
                 <span className="text-muted-foreground">Reasoning</span>
                 <span className="truncate text-[11px] text-muted-foreground/70">{currentModel?.label}</span>
               </div>
@@ -354,27 +452,20 @@ export function ModelPicker({ providers, provider, session, onChange, lockProvid
           {fastOff && <div className="border-t px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">{fastOff}</div>}
 
           {/* Speed and permissions */}
-          <div className="flex flex-wrap items-center gap-2 border-t p-2">
+          <div className="flex h-10 shrink-0 items-center gap-1 border-t px-1.5">
             {provider.fast && (
-              <Segmented
+              <FooterMenu
+                label="Speed"
+                align="start"
                 value={session.fast ? "fast" : "standard"}
                 onChange={(v) => onChange({ fast: v === "fast" })}
-                options={[
-                  { id: "standard", label: "Standard" },
-                  { id: "fast", label: "Fast", icon: <Zap className="size-3" /> },
-                ]}
+                options={SPEEDS}
               />
             )}
             <div className="flex-1" />
-            <Segmented
-              value={session.mode}
-              onChange={(mode) => onChange({ mode })}
-              options={(provider.modes ?? []).map((o) => ({
-                id: o.id,
-                label: o.label,
-                icon: <ModeIcon mode={o.id} className="size-3" />,
-              }))}
-            />
+            {modes.length > 0 && (
+              <FooterMenu label="Permissions" align="end" value={session.mode} onChange={(mode) => onChange({ mode })} options={modes} />
+            )}
           </div>
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

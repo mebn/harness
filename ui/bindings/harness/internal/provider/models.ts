@@ -41,7 +41,24 @@ export interface Elicitation {
  */
 export interface Info {
     "id": string;
+
+    /**
+     * Tool is the agent CLI behind it ("claude", "codex", "copilot"); several accounts of one
+     * CLI are separate providers with the same Tool.
+     */
+    "tool": string;
     "name": string;
+
+    /**
+     * Account names the account it signs in as (a name or email), "" when not known.
+     */
+    "account": string;
+
+    /**
+     * AccountNo numbers the CLI's accounts from 1 (the CLI's own sign-in) when it has more
+     * than one; 0 otherwise.
+     */
+    "accountNo": number;
     "available": boolean;
     "models": Option[] | null;
     "efforts": Option[] | null;

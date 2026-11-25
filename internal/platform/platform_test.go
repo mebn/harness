@@ -27,3 +27,10 @@ func TestEnvForPath(t *testing.T) {
 		}
 	}
 }
+
+func TestAddEnvNative(t *testing.T) {
+	got := AddEnv([]string{"A=1"}, EnvNative, "B", `C:\x`, true)
+	if len(got) != 2 || got[1] != `B=C:\x` {
+		t.Errorf("AddEnv = %v", got)
+	}
+}

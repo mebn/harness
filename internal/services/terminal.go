@@ -57,12 +57,13 @@ func (t *TerminalService) Start(projectID, worktree string, admin bool, cols, ro
 	// A WSL shell's commands run inside the distro, and an admin shell sits behind sudo: their
 	// processes can't be told apart from the shell's own here.
 	track := env.Normalize() == platform.EnvNative && !admin
-	return t.spawn(name, args, dir, env, track, cols, rows)
+	return t.spawn(name, args, dir, env, terminalEnv(), track, cols, rows)
 }
 
-// startCommand runs one command (not a shell) in a terminal, in the home folder of env. Its
-// output streams like a shell's, and the terminal closes when it exits.
-func (t *TerminalService) startCommand(env platform.Env, name string, args []string, cols, rows int) (string, error) {
+// startCommand runs one command (not a shell) in a terminal, in the home folder of env, with
+// the environment vars (nil = a shell's). Its output streams like a shell's, and the terminal
+// closes when it exits.
+func (t *TerminalService) startCommand(env platform.Env, name string, args, vars []string, cols, rows int) (string, error) {
 	dir, _ := os.UserHomeDir()
 	if env.Normalize() == platform.EnvWSL {
 		args = append([]string{"--cd", "~", "-e", "bash", "-lic", `exec "$0" "$@"`, name}, args...)
@@ -77,12 +78,15 @@ func (t *TerminalService) startCommand(env platform.Env, name string, args []str
 			}
 		}
 	}
-	return t.spawn(name, args, dir, env, false, cols, rows)
+	if vars == nil {
+		vars = terminalEnv()
+	}
+	return t.spawn(name, args, dir, env, vars, false, cols, rows)
 }
 
-// spawn starts name in a new pseudo-terminal and streams its output as term:data events.
-// track records its process id so Busy can look for child processes.
-func (t *TerminalService) spawn(name string, args []string, dir string, env platform.Env, track bool, cols, rows int) (string, error) {
+// spawn starts name in a new pseudo-terminal, with the environment vars, and streams its output
+// as term:data events. track records its process id so Busy can look for child processes.
+func (t *TerminalService) spawn(name string, args []string, dir string, env platform.Env, vars []string, track bool, cols, rows int) (string, error) {
 	p, err := pty.New()
 	if err != nil {
 		return "", err
@@ -94,7 +98,7 @@ func (t *TerminalService) spawn(name string, args []string, dir string, env plat
 	if env.Normalize() == platform.EnvNative {
 		cmd.Dir = dir
 	}
-	cmd.Env = terminalEnv()
+	cmd.Env = vars
 	if err := cmd.Start(); err != nil {
 		p.Close()
 		return "", err

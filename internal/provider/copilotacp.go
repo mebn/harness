@@ -129,6 +129,7 @@ func openCopilotConn(parent context.Context, req OpenRequest, ids *copilotSessio
 		cancel()
 		return nil, err
 	}
+	setConfigDir(cmd, req, "copilot")
 	if err := c.start(cmd); err != nil {
 		cancel()
 		return nil, err

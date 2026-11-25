@@ -27,6 +27,7 @@ func (Claude) Info() Info {
 	_, err := exec.LookPath("claude")
 	return Info{
 		ID:        "claude",
+		Tool:      "claude",
 		Name:      "Claude Code",
 		Available: err == nil || platform.HasWSL(),
 		Models: []Option{
@@ -92,10 +93,8 @@ func (Claude) Open(ctx context.Context, req OpenRequest) (Conn, error) {
 		return nil, err
 	}
 	// File checkpoints make rewind_files work (the SDK sets this for enableFileCheckpointing).
-	cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true")
-	if req.Env.Normalize() == platform.EnvWSL {
-		cmd.Env = append(cmd.Env, "WSLENV=CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING/u")
-	}
+	platform.SetEnv(cmd, req.Env, "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "true", false)
+	setConfigDir(cmd, req, "claude")
 	c := newClaudeConn(ctx, cancel, req)
 	if err := c.start(cmd); err != nil {
 		cancel()

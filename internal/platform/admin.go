@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // ErrNoElevation explains how to make administrator terminals and chats possible.
@@ -30,6 +31,11 @@ func AgentCommand(ctx context.Context, env Env, dir string, admin bool, name str
 	n, a, err := AdminCommand(dir, name, args...)
 	if err != nil {
 		return nil, err
+	}
+	// The agent needs the environment set on cmd (its config directory, for one); sudo for
+	// Windows passes it on only when asked (gsudo does by default).
+	if strings.EqualFold(filepath.Base(n), "sudo.exe") {
+		a = append([]string{"--preserve-env"}, a...)
 	}
 	cmd := exec.CommandContext(ctx, n, a...)
 	cmd.Dir = dir

@@ -71,15 +71,22 @@ type NewChatDefaults struct {
 const newChatDefaultsKey = "newChatDefaults"
 
 // AgentService finds the agent CLIs installed natively and in WSL, updates them and signs in
-// (in a terminal, as those are interactive), and keeps the defaults for new chats.
+// (in a terminal, as those are interactive), keeps each CLI's accounts, and the defaults for
+// new chats.
 type AgentService struct {
 	store     *store.Store
 	providers *provider.Registry
 	terms     *TerminalService
+	dataDir   string // holds the accounts' config directories
+
+	accountsMu sync.Mutex
 }
 
-func NewAgentService(s *store.Store, r *provider.Registry, terms *TerminalService) *AgentService {
-	return &AgentService{store: s, providers: r, terms: terms}
+// NewAgentService makes the saved accounts providers in r.
+func NewAgentService(s *store.Store, r *provider.Registry, terms *TerminalService, dataDir string) *AgentService {
+	a := &AgentService{store: s, providers: r, terms: terms, dataDir: dataDir}
+	a.applyAccounts(a.loadAccounts())
+	return a
 }
 
 // Installs looks for every agent CLI natively and, on Windows, in WSL's default distro.
@@ -126,6 +133,23 @@ func (a *AgentService) Installs() []AgentInstall {
 // which works with TerminalService's Write, Resize and Close. Its output streams as term:data
 // and term:exit tells when it's done.
 func (a *AgentService) Run(tool, env, action string, cols, rows int) (string, error) {
+	return a.run(tool, env, "", action, cols, rows)
+}
+
+// RunAccount signs in to one of a CLI's other accounts (action "login"), like Run.
+func (a *AgentService) RunAccount(id, action string, cols, rows int) (string, error) {
+	a.accountsMu.Lock()
+	s := a.loadAccounts()
+	a.accountsMu.Unlock()
+	for _, x := range s.Accounts {
+		if x.ID == id {
+			return a.run(x.Tool, string(accountEnv(x.Tool)), a.accountDir(id), action, cols, rows)
+		}
+	}
+	return "", errors.New("no such account")
+}
+
+func (a *AgentService) run(tool, env, dir, action string, cols, rows int) (string, error) {
 	c, ok := findCLI(tool)
 	if !ok {
 		return "", errors.New("unknown agent CLI: " + tool)
@@ -146,7 +170,11 @@ func (a *AgentService) Run(tool, env, action string, cols, rows int) (string, er
 		}
 		e = platform.EnvWSL
 	}
-	return a.terms.startCommand(e, c.ID, args, cols, rows)
+	var vars []string
+	if dir != "" {
+		vars = accountVars(terminalEnv(), e, c.ID, dir)
+	}
+	return a.terms.startCommand(e, c.ID, args, vars, cols, rows)
 }
 
 // NewChatDefaults returns what new chats start with.

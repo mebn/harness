@@ -3,7 +3,8 @@
 
 /**
  * AgentService finds the agent CLIs installed natively and in WSL, updates them and signs in
- * (in a terminal, as those are interactive), and keeps the defaults for new chats.
+ * (in a terminal, as those are interactive), keeps each CLI's accounts, and the defaults for
+ * new chats.
  * @module
  */
 
@@ -14,6 +15,22 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * Accounts lists every CLI's accounts, its own sign-in first, and checks whom each is
+ * signed in as.
+ */
+export function Accounts(): $CancellablePromise<$models.AgentAccount[] | null> {
+    return $Call.ByID(2717423758);
+}
+
+/**
+ * AddAccount adds an account to a CLI, with a config directory of its own. It isn't signed in
+ * until Run's "login" runs for it.
+ */
+export function AddAccount(tool: string): $CancellablePromise<$models.AgentAccount> {
+    return $Call.ByID(937612316, tool);
+}
 
 /**
  * Installs looks for every agent CLI natively and, on Windows, in WSL's default distro.
@@ -30,12 +47,36 @@ export function NewChatDefaults(): $CancellablePromise<$models.NewChatDefaults> 
 }
 
 /**
+ * RemoveAccount forgets an account and deletes its config directory (its sign-in and the
+ * CLI's history for it). Chats that used it move to the CLI's own sign-in, in a new
+ * conversation (the old one was kept in that directory).
+ */
+export function RemoveAccount(id: string): $CancellablePromise<void> {
+    return $Call.ByID(4210288189, id);
+}
+
+/**
+ * RenameAccount names an account ("" goes back to whom it's signed in as). The CLI's own
+ * sign-in is named with its tool as id.
+ */
+export function RenameAccount(tool: string, id: string, name: string): $CancellablePromise<void> {
+    return $Call.ByID(2171025167, tool, id, name);
+}
+
+/**
  * Run starts the CLI's update or login command in a terminal and returns the terminal's id,
  * which works with TerminalService's Write, Resize and Close. Its output streams as term:data
  * and term:exit tells when it's done.
  */
 export function Run(tool: string, env: string, action: string, cols: number, rows: number): $CancellablePromise<string> {
     return $Call.ByID(1657358159, tool, env, action, cols, rows);
+}
+
+/**
+ * RunAccount signs in to one of a CLI's other accounts (action "login"), like Run.
+ */
+export function RunAccount(id: string, action: string, cols: number, rows: number): $CancellablePromise<string> {
+    return $Call.ByID(4136150074, id, action, cols, rows);
 }
 
 /**

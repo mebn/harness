@@ -29,6 +29,7 @@ func (Codex) Info() Info {
 	_, err := exec.LookPath("codex")
 	return Info{
 		ID:        "codex",
+		Tool:      "codex",
 		Name:      "Codex",
 		Available: err == nil || platform.HasWSL(),
 		Models: []Option{

@@ -612,7 +612,9 @@ func (c *ChatService) handle(ls *liveSession, e provider.Event) {
 	id := ls.sessionID
 	switch e.Kind {
 	case provider.EventUsage:
-		c.usage.record(*e.Usage)
+		snap := *e.Usage
+		snap.Provider = ls.providerID // per account
+		c.usage.record(snap)
 	case provider.EventFast:
 		c.recordFast(id, e.FastState, e.FastOffReason)
 	case provider.EventMode:
@@ -1053,6 +1055,9 @@ func (c *ChatService) modelLabel(providerID, model string, withProvider bool) st
 	if p, ok := c.providers.Get(providerID); ok {
 		info := p.Info()
 		name = info.Name
+		if info.AccountNo > 0 {
+			name += " (" + cmp.Or(info.Account, fmt.Sprintf("account %d", info.AccountNo)) + ")"
+		}
 		for _, m := range info.Models {
 			if m.ID == model {
 				label = m.Label

@@ -52,6 +52,8 @@ type AppState = {
 
   init: () => Promise<void>;
   refreshTree: () => Promise<void>;
+  /** Loads the providers again (accounts were added, removed or renamed). */
+  reloadProviders: () => Promise<void>;
 
   /** Asks for a folder and adds it; returns the new project's id. */
   addProject: () => Promise<string | undefined>;
@@ -147,6 +149,11 @@ export const useApp = create<AppState>((set, get) => ({
     storage.set(SEEN_KEY, JSON.stringify(seen));
     // Reloaded chats are fetched again by the chat views that show them.
     set({ messages: {} });
+  },
+
+  reloadProviders: async () => {
+    const providers = await ChatService.Providers();
+    if (providers) set({ providers });
   },
 
   refreshTree: async () => set({ tree: (await ProjectService.Tree()) ?? [] }),

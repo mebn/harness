@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { ArrowUpCircle, Copy, LogIn, RefreshCw, X } from "lucide-react";
-import { ProviderLogo } from "@/components/common/provider-logo";
+import { ArrowUpCircle, Copy, LogIn, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { InlineEdit } from "@/components/common/inline-edit";
+import { AccountBadge, ProviderLogo, accountLabel } from "@/components/common/provider-logo";
 import { TERMINAL_THEMES, decode } from "@/components/panel/terminal-view";
 import { Button } from "@/components/ui/button";
-import { AgentService, Browser, Events, TerminalService, type AgentInstall, type NewChatDefaults } from "@/lib/backend";
+import {
+  AgentService,
+  Browser,
+  Events,
+  TerminalService,
+  type AgentAccount,
+  type AgentInstall,
+  type NewChatDefaults,
+} from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app-store";
+import { useLayout } from "@/stores/layout-store";
 import { useTheme } from "@/stores/theme-store";
 import { List, Row, Section } from "./parts";
 
@@ -15,6 +25,7 @@ export function AgentsSettings() {
   return (
     <>
       <NewChatDefaultsSection />
+      <AccountsSection />
       <InstallsSection />
     </>
   );
@@ -65,7 +76,7 @@ function NewChatDefaultsSection() {
           >
             <option value={SAME_AS_LAST}>Same as the last chat</option>
             {providers.map((p) => (
-              <optgroup key={p.id} label={p.name}>
+              <optgroup key={p.id} label={accountLabel(p) ? `${p.name} · ${accountLabel(p)}` : p.name}>
                 {(p.models ?? []).map((m) => (
                   <option key={m.id} value={`${p.id}:${m.id}`}>
                     {m.label}
@@ -104,6 +115,207 @@ function NewChatDefaultsSection() {
 const SELECT =
   "h-7 max-w-56 rounded-md border bg-background/60 px-2 text-xs outline-none hover:border-ring focus:border-ring disabled:opacity-50";
 
+// ---- accounts ----
+
+const TOOLS = ["claude", "codex", "copilot"];
+
+function AccountsSection() {
+  const providers = useApp((s) => s.providers);
+  const reloadProviders = useApp((s) => s.reloadProviders);
+  const refreshTree = useApp((s) => s.refreshTree);
+  const ask = useLayout((s) => s.ask);
+  const [accounts, setAccounts] = useState<AgentAccount[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [running, setRunning] = useState<Action | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setProblem(null);
+    AgentService.Accounts()
+      .then((list) => {
+        setAccounts(list ?? []);
+        void reloadProviders();
+      })
+      .catch((e) => setProblem(String(e)))
+      .finally(() => setLoading(false));
+  }, [reloadProviders]);
+
+  useEffect(refresh, [refresh]);
+
+  const fail = (e: unknown) => setProblem(String(e));
+  const toolName = (tool: string) => providers.find((p) => p.id === tool)?.name ?? tool;
+
+  const signIn = (a: AgentAccount) =>
+    setRunning({
+      tool: a.tool,
+      env: "",
+      action: "login",
+      account: a.id,
+      label: `Signing in to ${toolName(a.tool)} (account ${a.no})`,
+    });
+
+  const add = (tool: string) => {
+    setProblem(null);
+    AgentService.AddAccount(tool)
+      .then((a) => {
+        setAccounts((list) => [...(list ?? []), { ...a, signedIn: "no" }]);
+        void reloadProviders();
+        signIn(a);
+      })
+      .catch(fail);
+  };
+
+  const rename = (a: AgentAccount, name: string) => {
+    setRenaming(null);
+    setAccounts((list) => list?.map((x) => (x.provider === a.provider ? { ...x, name } : x)) ?? null);
+    AgentService.RenameAccount(a.tool, a.id, name)
+      .then(() => reloadProviders())
+      .catch(fail);
+  };
+
+  const remove = async (a: AgentAccount) => {
+    const yes = await ask({
+      title: `Remove ${accountName(a)}?`,
+      message: [
+        `${toolName(a.tool)} is signed out of it, and what the CLI kept for it is deleted.`,
+        "Chats that used it continue with the CLI's own sign-in, in a new conversation.",
+      ],
+      action: "Remove account",
+    });
+    if (!yes) return;
+    if (running?.account === a.id) setRunning(null);
+    AgentService.RemoveAccount(a.id)
+      .then(() => {
+        setAccounts((list) => list?.filter((x) => x.provider !== a.provider) ?? null);
+        void reloadProviders();
+        void refreshTree();
+      })
+      .catch(fail);
+  };
+
+  return (
+    <Section
+      title="Accounts"
+      action={
+        <Button variant="ghost" size="xs" disabled={loading} onClick={refresh}>
+          <RefreshCw className={cn(loading && "animate-spin")} /> {loading ? "Checking…" : "Check again"}
+        </Button>
+      }
+    >
+      {problem && <p className="text-xs text-destructive">{problem}</p>}
+      {TOOLS.map((tool) => {
+        const mine = (accounts ?? []).filter((a) => a.tool === tool);
+        const several = mine.length > 1;
+        return (
+          <List key={tool}>
+            <div className="flex min-h-10 items-center gap-2 bg-muted/40 px-3 text-sm font-medium">
+              <ProviderLogo id={tool} className="size-4" />
+              <span className="flex-1">{toolName(tool)}</span>
+              <Button variant="ghost" size="xs" disabled={!accounts || !!running} onClick={() => add(tool)}>
+                <Plus /> Add account
+              </Button>
+            </div>
+            {!accounts && <div className="px-3 py-2 text-xs text-muted-foreground">Checking…</div>}
+            {mine.map((a) => (
+              <div key={a.provider}>
+                <div className="flex min-h-12 items-center gap-3 px-3 py-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center">
+                    <AccountBadge no={several ? a.no : 0} ringClassName="ring-background">
+                      <ProviderLogo id={tool} className="size-4" />
+                    </AccountBadge>
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex h-6 items-center gap-1.5 text-sm">
+                      {renaming === a.provider ? (
+                        <InlineEdit
+                          value={accountName(a)}
+                          onSubmit={(v) => rename(a, v)}
+                          onCancel={() => setRenaming(null)}
+                          className="h-6 max-w-64 text-sm"
+                        />
+                      ) : (
+                        <>
+                          <span className="truncate">{accountName(a)}</span>
+                          <button
+                            type="button"
+                            title="Rename"
+                            onClick={() => setRenaming(a.provider)}
+                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <Pencil className="size-3" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      <AccountState account={a} />
+                      {a.id === "" && <span className="truncate opacity-70">The CLI's own sign-in</span>}
+                    </div>
+                  </div>
+                  {a.id !== "" && (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Button
+                        variant={a.signedIn === "no" ? "default" : "outline"}
+                        size="xs"
+                        disabled={!!running}
+                        onClick={() => signIn(a)}
+                      >
+                        <LogIn /> {a.signedIn === "yes" ? "Sign in again" : "Sign in"}
+                      </Button>
+                      <Button variant="ghost" size="xs" title="Remove account" onClick={() => void remove(a)}>
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {running && a.id !== "" && running.account === a.id && (
+                  <CommandTerminal
+                    action={running}
+                    onClose={() => {
+                      setRunning(null);
+                      refresh();
+                    }}
+                  />
+                )}
+              </div>
+            ))}
+          </List>
+        );
+      })}
+      <p className="text-xs text-muted-foreground">
+        Each account is its own provider in the model picker, numbered on its icon. Moving a chat to another account
+        starts a new conversation there. The CLI's own sign-in is under Agent CLIs below.
+      </p>
+    </Section>
+  );
+}
+
+/** An account's name: the one given, else whom it's signed in as, else its number. */
+function accountName(a: AgentAccount) {
+  return a.name || a.email || (a.id === "" ? "Default account" : `Account ${a.no}`);
+}
+
+function AccountState({ account: a }: { account: AgentAccount }) {
+  const who = a.name && a.email ? ` · ${a.email}` : "";
+  if (a.signedIn === "yes")
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+        <span className="truncate">Signed in{who}</span>
+      </span>
+    );
+  if (a.signedIn === "no")
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-amber-600 dark:text-amber-400">
+        <span className="size-1.5 rounded-full bg-amber-500" />
+        Not signed in
+      </span>
+    );
+  return null;
+}
+
 // ---- installed CLIs ----
 
 /** How to install each CLI where it's missing. */
@@ -120,7 +332,8 @@ function installHint(tool: string, env: string, place: string): string {
   return "";
 }
 
-type Action = { tool: string; env: string; action: "update" | "login"; label: string };
+/** A CLI command to run in a terminal; with account, it signs in to that account. */
+type Action = { tool: string; env: string; action: "update" | "login"; label: string; account?: string };
 
 function actionKey(a: { tool: string; env: string }) {
   return `${a.tool}:${a.env}`;
@@ -356,7 +569,10 @@ function CommandTerminal({ action, onClose }: { action: Action; onClose: () => v
 
     const start = setTimeout(() => {
       if (disposed) return;
-      AgentService.Run(action.tool, action.env, action.action, term.cols, term.rows)
+      (action.account
+        ? AgentService.RunAccount(action.account, action.action, term.cols, term.rows)
+        : AgentService.Run(action.tool, action.env, action.action, term.cols, term.rows)
+      )
         .then((id) => {
           if (disposed) return void TerminalService.Close(id);
           idRef.current = id;

@@ -82,6 +82,7 @@ func main() {
 	chat := services.NewChatService(db, providers, usageSvc, files, emit)
 	terms := services.NewTerminalService(db, emit)
 	hotkeys := services.NewHotkeyService(db)
+	agents := services.NewAgentService(db, providers, terms, dir)
 
 	app := application.New(application.Options{
 		Name:        "Harness Server",
@@ -95,7 +96,7 @@ func main() {
 			application.NewService(services.NewGitService(db)),
 			application.NewService(terms),
 			application.NewService(hotkeys),
-			application.NewService(services.NewAgentService(db, providers, terms)),
+			application.NewService(agents),
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(ui.Assets),

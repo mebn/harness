@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os/exec"
+	"sync"
 
 	"harness/internal/platform"
 	"harness/internal/usage"
@@ -18,8 +20,16 @@ type Option struct {
 
 // Info describes a provider and the choices it supports.
 type Info struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
+	ID string `json:"id"`
+	// Tool is the agent CLI behind it ("claude", "codex", "copilot"); several accounts of one
+	// CLI are separate providers with the same Tool.
+	Tool string `json:"tool"`
+	Name string `json:"name"`
+	// Account names the account it signs in as (a name or email), "" when not known.
+	Account string `json:"account"`
+	// AccountNo numbers the CLI's accounts from 1 (the CLI's own sign-in) when it has more
+	// than one; 0 otherwise.
+	AccountNo     int      `json:"accountNo"`
 	Available     bool     `json:"available"`
 	Models        []Option `json:"models"`
 	Efforts       []Option `json:"efforts"`
@@ -79,6 +89,8 @@ type OpenRequest struct {
 	ResumeAt string
 	// LastUUID is the id of the conversation's latest entry, carried over from earlier runs.
 	LastUUID string
+	// ConfigDir is the CLI's config directory for the account it runs as ("" = its default).
+	ConfigDir string
 }
 
 // Request is one user turn for providers that run a process per turn.
@@ -275,30 +287,129 @@ type Provider interface {
 	Open(ctx context.Context, req OpenRequest) (Conn, error)
 }
 
-// Registry holds providers in display order.
+// Account is a sign-in of an agent CLI kept apart from its default one, in a config directory
+// of its own.
+type Account struct {
+	ID    string // unique; the provider's id is "<tool>@<ID>"
+	Tool  string
+	Label string // a name or email, "" when not known
+	Dir   string // the CLI's config directory (a host path)
+}
+
+// ProviderID is the id of the provider that runs the account.
+func (a Account) ProviderID() string { return a.Tool + "@" + a.ID }
+
+// ConfigDirVar is the environment variable that points a CLI at its config directory.
+func ConfigDirVar(tool string) string {
+	switch tool {
+	case "claude":
+		return "CLAUDE_CONFIG_DIR"
+	case "codex":
+		return "CODEX_HOME"
+	case "copilot":
+		return "COPILOT_HOME"
+	}
+	return ""
+}
+
+// setConfigDir points a CLI started for req at the account's config directory, if any.
+func setConfigDir(cmd *exec.Cmd, req OpenRequest, tool string) {
+	if req.ConfigDir != "" {
+		platform.SetEnv(cmd, req.Env, ConfigDirVar(tool), req.ConfigDir, true)
+	}
+}
+
+// accountProvider runs a provider as one of its CLI's other accounts.
+type accountProvider struct {
+	base Provider
+	acct Account
+	no   int
+}
+
+func (a accountProvider) Info() Info {
+	info := a.base.Info()
+	info.ID, info.Account, info.AccountNo = a.acct.ProviderID(), a.acct.Label, a.no
+	return info
+}
+
+func (a accountProvider) Open(ctx context.Context, req OpenRequest) (Conn, error) {
+	req.ConfigDir = a.acct.Dir
+	return a.base.Open(ctx, req)
+}
+
+// labelled is a provider's default account, with its label and number.
+type labelled struct {
+	Provider
+	label string
+	no    int
+}
+
+func (l labelled) Info() Info {
+	info := l.Provider.Info()
+	info.Account, info.AccountNo = l.label, l.no
+	return info
+}
+
+// Registry holds providers in display order: each CLI's default account, then its others.
 type Registry struct {
+	base []Provider
+
+	mu    sync.RWMutex
 	order []string
 	byID  map[string]Provider
 }
 
 func NewRegistry(providers ...Provider) *Registry {
-	r := &Registry{byID: map[string]Provider{}}
-	for _, p := range providers {
-		id := p.Info().ID
-		r.order = append(r.order, id)
-		r.byID[id] = p
-	}
+	r := &Registry{base: providers}
+	r.SetAccounts(nil, nil)
 	return r
 }
 
+// SetAccounts replaces the accounts besides each CLI's default one. defaults labels the
+// default accounts by tool.
+func (r *Registry) SetAccounts(accounts []Account, defaults map[string]string) {
+	order := []string{}
+	byID := map[string]Provider{}
+	for _, p := range r.base {
+		info := p.Info()
+		var mine []Account
+		for _, a := range accounts {
+			if a.Tool == info.Tool {
+				mine = append(mine, a)
+			}
+		}
+		no := 0
+		if len(mine) > 0 {
+			no = 1
+		}
+		order = append(order, info.ID)
+		byID[info.ID] = labelled{Provider: p, label: defaults[info.Tool], no: no}
+		for i, a := range mine {
+			order = append(order, a.ProviderID())
+			byID[a.ProviderID()] = accountProvider{base: p, acct: a, no: i + 2}
+		}
+	}
+	r.mu.Lock()
+	r.order, r.byID = order, byID
+	r.mu.Unlock()
+}
+
 func (r *Registry) Get(id string) (Provider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	p, ok := r.byID[id]
 	return p, ok
 }
 
-func (r *Registry) Default() Provider { return r.byID[r.order[0]] }
+func (r *Registry) Default() Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.byID[r.order[0]]
+}
 
 func (r *Registry) Infos() []Info {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Info, 0, len(r.order))
 	for _, id := range r.order {
 		out = append(out, r.byID[id].Info())

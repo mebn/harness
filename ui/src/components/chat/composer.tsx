@@ -57,7 +57,11 @@ export function Composer({ session, visible, status, quick, bar, focusKey, onDia
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuClosed, setMenuClosed] = useState(false);
 
-  const provider = providers.find((p) => p.id === session.provider) ?? providers[0];
+  // A removed account's chats fall back to its CLI's own sign-in.
+  const provider =
+    providers.find((p) => p.id === session.provider) ??
+    providers.find((p) => p.id === session.provider.split("@")[0]) ??
+    providers[0];
 
   // Text handed over (a rewind, fork or edited queued message) goes into the input, ahead of
   // anything already typed there.

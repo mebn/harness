@@ -220,6 +220,11 @@ func (s *Store) LatestSession() (Session, bool) {
 	return list[0], true
 }
 
+// SessionsWithProvider returns the sessions that run with a provider.
+func (s *Store) SessionsWithProvider(provider string) ([]Session, error) {
+	return s.querySessions(`WHERE provider = ?`, provider)
+}
+
 func (s *Store) InsertSession(x *Session) error {
 	x.CreatedAt, x.UpdatedAt = now(), now()
 	_, err := s.db.Exec(`INSERT INTO sessions (`+sessionCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

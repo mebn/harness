@@ -158,3 +158,35 @@ func ShellCommand(env Env, dir string) (name string, args []string) {
 	}
 	return "/bin/sh", nil
 }
+
+// SetEnv sets an environment variable for cmd (on top of this process's environment when
+// cmd has none yet), as AddEnv does.
+func SetEnv(cmd *exec.Cmd, env Env, key, value string, isPath bool) {
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = AddEnv(cmd.Env, env, key, value, isPath)
+}
+
+// AddEnv adds key=value to an environment. For WSL the key is also named in WSLENV so it
+// crosses into the distro; isPath translates a Windows path to its /mnt/... form on the way.
+func AddEnv(vars []string, env Env, key, value string, isPath bool) []string {
+	vars = append(vars, key+"="+value)
+	if env.Normalize() != EnvWSL {
+		return vars
+	}
+	flag := "/u"
+	if isPath {
+		flag = "/p"
+	}
+	wslenv := ""
+	for _, kv := range vars {
+		if len(kv) > 7 && strings.EqualFold(kv[:7], "WSLENV=") {
+			wslenv = kv[7:]
+		}
+	}
+	if wslenv != "" {
+		wslenv += ":"
+	}
+	return append(vars, "WSLENV="+wslenv+key+flag)
+}

@@ -23,6 +23,7 @@ export {
 };
 
 export type {
+    AgentAccount,
     AgentInstall,
     AttachmentInput,
     ChatPending,

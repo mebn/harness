@@ -136,6 +136,7 @@ func openCodexConn(parent context.Context, req OpenRequest, ids *copilotSessions
 		cancel()
 		return nil, err
 	}
+	setConfigDir(cmd, req, "codex")
 	if err := c.start(cmd); err != nil {
 		cancel()
 		return nil, err
