@@ -344,6 +344,8 @@ type GroupState = {
    * file is open, else a new tab in the focused window.
    */
   openFile: (groupId: string, path: string, line?: number) => void;
+  /** Opens a chat's subagent in a tab of its own, or brings its tab to the front. */
+  openAgent: (groupId: string, sessionId: string, agentId: string, title: string) => void;
 
   /** Moves focus to the window in a direction (active group). */
   focusDirection: (dir: Direction) => void;
@@ -358,6 +360,23 @@ type GroupState = {
 };
 
 export const useGroups = create<GroupState>((set, get) => {
+  /** Adds a tab to the focused window; a placeholder tab showing there takes it in its place. */
+  const placeTab = (groupId: string, tab: Tab) => {
+    const g = get().groups.find((x) => x.id === groupId);
+    if (!g) return;
+    const target = findPane(g.root, g.focused) ?? panesOf(g.root)[0];
+    const placeholder = target.tabs.find((t) => t.id === target.active && t.kind === "new");
+    edit(groupId, (x) => ({
+      ...x,
+      root: updatePane(x.root, target.id, (p) => ({
+        ...p,
+        tabs: placeholder ? p.tabs.map((t) => (t.id === placeholder.id ? tab : t)) : [...p.tabs, tab],
+        active: tab.id,
+      })),
+      focused: target.id,
+      maximized: x.maximized && x.maximized !== target.id ? null : x.maximized,
+    }));
+  };
   const edit = (groupId: string, fn: (g: Group) => Group) =>
     set({ groups: get().groups.map((g) => (g.id === groupId ? fixFocus(trackFocus(g, fn(g))) : g)) });
 
@@ -412,13 +431,15 @@ export const useGroups = create<GroupState>((set, get) => {
         activeId = groups.find((g) => tabsOf(g.root).some((t) => t.sessionId === legacy))?.id ?? null;
       }
 
-      // Drop groups of removed workspaces and chat tabs of deleted sessions.
+      // Drop groups of removed workspaces and chat (and subagent) tabs of deleted sessions.
       const projects = new Set(tree.map((n) => n.project.id));
       const sessions = new Set(tree.flatMap((n) => (n.sessions ?? []).map((s) => s.id)));
       groups = groups
         .filter((g) => projects.has(g.projectId))
         .map((g) => {
-          const stale = tabsOf(g.root).filter((t) => t.kind === "chat" && !sessions.has(t.sessionId ?? ""));
+          const stale = tabsOf(g.root).filter(
+            (t) => (t.kind === "chat" || t.kind === "agent") && !sessions.has(t.sessionId ?? ""),
+          );
           if (stale.length === 0) return g;
           let root = g.root;
           for (const t of stale) {
@@ -671,21 +692,17 @@ export const useGroups = create<GroupState>((set, get) => {
         }));
         get().selectTab(groupId, existing.id);
       } else {
-        const tab: Tab = { id: uid("tab"), kind: "file", path, line };
-        const target = findPane(g.root, g.focused) ?? panesOf(g.root)[0];
-        // An empty window or a placeholder tab takes the file in its place.
-        const placeholder = target.tabs.find((t) => t.id === target.active && t.kind === "new");
-        edit(groupId, (x) => ({
-          ...x,
-          root: updatePane(x.root, target.id, (p) => ({
-            ...p,
-            tabs: placeholder ? p.tabs.map((t) => (t.id === placeholder.id ? tab : t)) : [...p.tabs, tab],
-            active: tab.id,
-          })),
-          focused: target.id,
-          maximized: x.maximized && x.maximized !== target.id ? null : x.maximized,
-        }));
+        placeTab(groupId, { id: uid("tab"), kind: "file", path, line });
       }
+      bumpFocus();
+    },
+
+    openAgent: (groupId, sessionId, agentId, title) => {
+      const g = get().groups.find((x) => x.id === groupId);
+      if (!g) return;
+      const existing = tabsOf(g.root).find((t) => t.kind === "agent" && t.sessionId === sessionId && t.agentId === agentId);
+      if (existing) get().selectTab(groupId, existing.id);
+      else placeTab(groupId, { id: uid("tab"), kind: "agent", sessionId, agentId, title });
       bumpFocus();
     },
 

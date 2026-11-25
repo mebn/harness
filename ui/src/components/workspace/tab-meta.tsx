@@ -1,4 +1,4 @@
-import { File, FolderTree, GitCompare, Globe, MessageSquare, Plus, SquareTerminal, type LucideIcon } from "lucide-react";
+import { Bot, File, FolderTree, GitCompare, Globe, MessageSquare, Plus, SquareTerminal, type LucideIcon } from "lucide-react";
 import { hostLabel } from "@/components/panel/browser-view";
 import type { Tab, TabKind } from "@/lib/layout-tree";
 import { findSession, useApp } from "@/stores/app-store";
@@ -12,6 +12,7 @@ export const KIND_META: Record<TabKind, { label: string; icon: LucideIcon }> = {
   changes: { label: "Changes", icon: GitCompare },
   files: { label: "Files", icon: FolderTree },
   file: { label: "File", icon: File },
+  agent: { label: "Subagent", icon: Bot },
   new: { label: "New tab", icon: Plus },
 };
 
@@ -27,6 +28,7 @@ export function useTabLabel(tab: Tab): string {
   if (tab.kind === "browser" && tab.url) return hostLabel(tab.url);
   if (tab.kind === "terminal" && tab.admin) return "Terminal (Admin)";
   if (tab.kind === "file" && tab.path) return tab.path.split("/").pop()!;
+  if (tab.kind === "agent" && tab.title) return tab.title;
   return KIND_META[tab.kind].label;
 }
 

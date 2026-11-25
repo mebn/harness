@@ -1,4 +1,5 @@
 import { memo, useRef } from "react";
+import { AgentTab } from "@/components/chat/agent-view";
 import { ChatView } from "@/components/chat/chat-view";
 import { BrowserView } from "@/components/panel/browser-view";
 import { FileExplorer, FileTab } from "@/components/panel/file-explorer";
@@ -131,7 +132,11 @@ function ScaledContent({
 }) {
   switch (tab.kind) {
     case "chat":
-      return tab.sessionId ? <ChatView sessionId={tab.sessionId} visible={visible} /> : null;
+      return tab.sessionId ? <ChatView sessionId={tab.sessionId} groupId={groupId} visible={visible} /> : null;
+    case "agent":
+      return tab.sessionId && tab.agentId ? (
+        <AgentTab sessionId={tab.sessionId} agentId={tab.agentId} groupId={groupId} visible={visible} />
+      ) : null;
     case "browser":
       return <BrowserView initialUrl={tab.url} onNavigate={(url) => useGroups.getState().setTabUrl(groupId, tab.id, url)} />;
     case "changes":

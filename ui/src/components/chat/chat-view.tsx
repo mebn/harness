@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Message } from "@/lib/backend";
 import { OpenAgentContext } from "./agent-call";
-import { AgentDialog, AgentsOverview, collectAgents } from "./agent-view";
+import { AgentsOverview, collectAgents, tabTitle } from "./agent-view";
+import { useGroups } from "@/stores/group-store";
 import { useApp, useSession } from "@/stores/app-store";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
@@ -9,7 +10,7 @@ import { MessageList } from "./message-list";
 const EMPTY: Message[] = [];
 
 /** One chat. `visible` is true while its tab is on screen. */
-export function ChatView({ sessionId, visible }: { sessionId: string; visible: boolean }) {
+export function ChatView({ sessionId, groupId, visible }: { sessionId: string; groupId: string; visible: boolean }) {
   const session = useSession(sessionId);
   const project = useApp((s) => s.tree.find((n) => n.project.id === session?.projectId)?.project);
   const loaded = useApp((s) => s.messages[sessionId]);
@@ -33,14 +34,17 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
 
   const shown = useMemo(() => settleStale(messages, running), [messages, running]);
 
-  // Subagents: a chip above the input lists the running ones, and one opens in a dialog.
+  // Subagents: a chip above the input lists the running ones, and one opens in a tab of its own.
   const agents = useMemo(() => collectAgents(shown), [shown]);
-  const [viewing, setViewing] = useState<string | null>(null);
-  const [viewOpen, setViewOpen] = useState(false);
-  const openAgent = useCallback((toolId: string) => {
-    setViewing(toolId);
-    setViewOpen(true);
-  }, []);
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+  const openAgent = useCallback(
+    (toolId: string) => {
+      const entry = agentsRef.current.find((a) => a.part.toolId === toolId);
+      if (entry) useGroups.getState().openAgent(groupId, sessionId, toolId, tabTitle(entry.part));
+    },
+    [groupId, sessionId],
+  );
 
   if (!session) {
     return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Chat not found</div>;
@@ -61,7 +65,6 @@ export function ChatView({ sessionId, visible }: { sessionId: string; visible: b
           visible={visible}
           status={<AgentsOverview agents={agents} onOpen={openAgent} />}
         />
-        <AgentDialog entry={agents.find((a) => a.part.toolId === viewing)} open={viewOpen} onOpenChange={setViewOpen} />
       </div>
     </OpenAgentContext.Provider>
   );

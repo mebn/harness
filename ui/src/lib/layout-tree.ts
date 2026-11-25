@@ -10,14 +10,16 @@
 export type ContentKind = "chat" | "terminal" | "browser" | "changes" | "files";
 
 /**
- * A tab is content, "new" (a placeholder showing the numbered choices until one is picked), or
- * "file": one file from the workspace, opened from search or dragged out of the file explorer.
+ * A tab is content, "new" (a placeholder showing the numbered choices until one is picked),
+ * "file": one file from the workspace, opened from search or dragged out of the file explorer,
+ * or "agent": a chat's subagent, opened from the chat.
  */
-export type TabKind = ContentKind | "new" | "file";
+export type TabKind = ContentKind | "new" | "file" | "agent";
 
 /** Which text-size setting a tab follows: a file tab reads like the file explorer. */
 export function sizeKind(kind: TabKind): ContentKind | undefined {
   if (kind === "new") return undefined;
+  if (kind === "agent") return "chat";
   return kind === "file" ? "files" : kind;
 }
 
@@ -27,8 +29,12 @@ export const TAB_KINDS: ContentKind[] = ["chat", "terminal", "browser", "changes
 export type Tab = {
   id: string;
   kind: TabKind;
-  /** chat: the backend session shown in this tab. */
+  /** chat: the backend session shown in this tab; agent: the chat the subagent runs in. */
   sessionId?: string;
+  /** agent: the id of the Agent tool call running the subagent. */
+  agentId?: string;
+  /** agent: its type and task, as the tab's name. */
+  title?: string;
   /** browser: last visited address. */
   url?: string;
   /** terminal: runs as administrator (Windows). */
